@@ -108,8 +108,8 @@ const InputPanel: React.FC<InputPanelProps> = ({
            <div className="flex items-center justify-between w-full">
             <span>Get Feedback</span>
             <div className="flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
-              <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
+              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
             </div>
           </div>
         )}
