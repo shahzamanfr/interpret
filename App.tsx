@@ -208,17 +208,17 @@ const App: React.FC = () => {
       <Header />
       <main className="w-full px-4 lg:px-8 mx-auto max-w-7xl">
         {!showDescribeSection && (
-          <section className="py-16">
+          <section className="py-20">
             <div className="relative">
-              <div className="pointer-events-none absolute -top-16 -right-16 h-64 w-64 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_60%)] blur-2xl" aria-hidden />
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-12">
+              <div className="pointer-events-none absolute -top-24 -right-16 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_60%)] blur-3xl" aria-hidden />
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-14">
                 <div className="max-w-3xl space-y-6">
                 <p className="text-xs uppercase tracking-[0.35em] text-gray-600">AI Communication Coach</p>
-                <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight text-white">Build your explanation skills</h2>
-                <p className="text-base text-gray-400 max-w-2xl">Start with a random image to describe, then get instant feedback and tips.</p>
+                <h2 className="text-5xl sm:text-6xl font-semibold tracking-tight text-white">Build your explanation skills</h2>
+                <p className="text-base text-gray-400/90 max-w-2xl">Start with a random image to describe, then get instant feedback and tips.</p>
                 <div className="flex flex-wrap items-center gap-3">
-                  <a href="#image-describe" className="rounded-full border border-gray-700 bg-white text-black px-5 py-2.5 text-sm font-semibold hover:opacity-95 transition-colors duration-200">Try Image Describe</a>
-                  <a href="#image-describe" className="rounded-full border border-gray-700 bg-gray-900/60 px-5 py-2.5 text-sm font-semibold text-gray-200 hover:bg-gray-800 transition-colors duration-200">Start Now</a>
+                  <a href="#image-describe" className="rounded-full border border-gray-600 bg-black text-white px-5 py-2.5 text-sm font-semibold hover:opacity-95 transition-colors duration-200">Try Image Describe</a>
+                  <a href="#image-describe" className="rounded-full border border-gray-600 bg-black text-white px-5 py-2.5 text-sm font-semibold hover:opacity-95 transition-colors duration-200">Start Now</a>
                 </div>
                 <div className="mt-8">
                     <div className="mb-6 flex flex-wrap items-center gap-2">
@@ -226,9 +226,9 @@ const App: React.FC = () => {
                       <span className="rounded-full border border-gray-800 bg-gray-900/60 px-3 py-1 text-xs font-semibold text-gray-300">Debater</span>
                       <span className="rounded-full border border-gray-800 bg-gray-900/60 px-3 py-1 text-xs font-semibold text-gray-300">Storyteller</span>
                     </div>
-                  <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 gap-4">
                     {[1,2,3].map((i) => (
-                      <div key={i} className="relative aspect-[4/3] overflow-hidden rounded-xl border border-gray-800 bg-gray-900">
+                      <div key={i} className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-gray-800/70 bg-gray-900/60 ui-card">
                         <img
                           src={`https://picsum.photos/seed/hero-${i}/640/480`}
                           alt="Website preview"
@@ -242,7 +242,7 @@ const App: React.FC = () => {
                   <div className="mt-6 space-y-4">
                     <div>
                       <div className="inline-flex items-center gap-2 rounded-full border border-gray-800 bg-gray-900/60 px-3 py-1 text-xs font-semibold text-gray-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" />
                         Built to make your ideas land
                       </div>
                       <p className="mt-3 text-sm leading-relaxed text-gray-400 max-w-2xl">
@@ -251,16 +251,16 @@ const App: React.FC = () => {
                         strategies you can reuse in interviews, standups, and presentations.
                       </p>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-gray-800 bg-gray-950/60 p-5 transition-colors duration-300 hover:bg-gray-900/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="rounded-2xl ui-card p-5 transition-colors duration-300 hover:bg-gray-900/60">
                         <p className="text-white text-sm font-semibold">Practice that sticks</p>
                         <p className="text-xs text-gray-400 mt-1">Short, focused reps so you build habits—not just answers.</p>
                       </div>
-                      <div className="rounded-2xl border border-gray-800 bg-gray-950/60 p-5 transition-colors duration-300 hover:bg-gray-900/60">
+                      <div className="rounded-2xl ui-card p-5 transition-colors duration-300 hover:bg-gray-900/60">
                         <p className="text-white text-sm font-semibold">Feedback that matters</p>
                         <p className="text-xs text-gray-400 mt-1">Specific next steps on tone, structure, and storytelling.</p>
                       </div>
-                      <a href="#about" className="rounded-2xl border border-gray-800 bg-gray-950/60 p-5 transition-colors duration-300 hover:bg-gray-900/60">
+                      <a href="#about" className="rounded-2xl ui-card p-5 transition-colors duration-300 hover:bg-gray-900/60">
                         <p className="text-white text-sm font-semibold">Learn how it works</p>
                         <p className="text-xs text-gray-400 mt-1">Dive deeper into benefits and the coaching flow.</p>
                       </a>
@@ -268,7 +268,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-                <div className="w-full lg:max-w-xl border border-gray-800 rounded-3xl bg-gradient-to-br from-gray-950 via-black to-gray-950 p-6 space-y-4">
+                <div className="w-full lg:max-w-xl rounded-3xl ui-card p-7 space-y-5 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.6)]">
                 <HomeDomains
                   domains={imageDomains}
                   selectedDomainSlug={selectedDomainSlug}
@@ -292,8 +292,8 @@ const App: React.FC = () => {
         )}
 
         {showDescribeSection && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-12 py-12" id="image-describe">
-            <div className="lg:col-span-7 space-y-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-12 py-14" id="image-describe">
+            <div className="lg:col-span-7 space-y-10">
               {/* DomainGallery removed as requested */}
               <ImagePanel
                 ref={imgRef}
@@ -318,7 +318,7 @@ const App: React.FC = () => {
               />
               {error && <div className="text-red-400 bg-red-900/50 p-3 rounded-lg border border-red-800">{error}</div>}
             </div>
-            <div className="lg:col-span-5 space-y-12 mt-12 lg:mt-0">
+            <div className="lg:col-span-5 space-y-8 mt-12 lg:mt-0">
               <FeedbackPanel feedback={feedback} loadingState={loadingState} imageUrl={imageUrl} />
               <BehavioralAnalysisPanel behavior={feedback?.communicationBehavior} />
               <RewritePanel rewrite={feedback?.exampleRewrite} />

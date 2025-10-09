@@ -93,7 +93,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
       <button
         onClick={onSubmit}
         disabled={isLoading || !explanation}
-        className="mt-6 w-full h-12 flex items-center justify-center px-6 bg-white text-black font-semibold rounded-full shadow-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-all"
+        className="mt-6 w-full h-12 flex items-center justify-center px-6 bg-gray-800 text-white font-semibold rounded-full shadow-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-opacity-75 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-all"
       >
         {isLoading ? (
           <div className="flex items-center space-x-2">
@@ -108,8 +108,8 @@ const InputPanel: React.FC<InputPanelProps> = ({
            <div className="flex items-center justify-between w-full">
             <span>Get Feedback</span>
             <div className="flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 bg-black rounded-full"></span>
-              <span className="w-1.5 h-1.5 bg-black rounded-full"></span>
+              <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
+              <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
             </div>
           </div>
         )}

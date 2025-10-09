@@ -70,7 +70,7 @@ const AboutSection: React.FC<AboutSectionProps> = ({
                   <button
                     type="button"
                     onClick={handlePlay}
-                    className="absolute inset-0 m-auto h-14 w-14 rounded-full bg-white/95 text-black grid place-items-center shadow-[0_10px_30px_-10px_rgba(255,255,255,0.5)] hover:scale-[1.03] transition-transform duration-200"
+                    className="absolute inset-0 m-auto h-14 w-14 rounded-full bg-gray-800/95 text-white grid place-items-center shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] hover:scale-[1.03] transition-transform duration-200"
                     aria-label="Play video"
                   >
                     ▶

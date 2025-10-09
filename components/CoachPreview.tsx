@@ -8,7 +8,7 @@ const CoachPreview: React.FC = () => {
           Describe what’s happening in this image in 3-4 sentences.
         </div>
         <div className="flex justify-end">
-          <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-gray-800 bg-white/95 px-4 py-3 text-sm text-black shadow-[0_10px_30px_-20px_rgba(255,255,255,0.6)]">
+          <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-gray-800 bg-gray-800 px-4 py-3 text-sm text-white shadow-[0_10px_30px_-20px_rgba(0,0,0,0.8)]">
             A presenter explains a product update while teammates take notes and discuss next steps.
           </div>
         </div>
@@ -25,7 +25,7 @@ const CoachPreview: React.FC = () => {
         </div>
         <div className="flex justify-end">
           <div className="inline-flex items-center gap-1 rounded-full border border-gray-800 bg-gray-900/60 px-3 py-1 text-xs text-gray-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" />
             Live coaching
           </div>
         </div>

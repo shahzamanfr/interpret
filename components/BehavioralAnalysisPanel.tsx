@@ -31,8 +31,8 @@ const BehavioralAnalysisPanel: React.FC<BehavioralAnalysisPanelProps> = ({ behav
         <h3 className="text-3xl font-bold text-white tracking-tighter">Communication Profile</h3>
         <p className="text-gray-500 mt-1">An analysis of your communication style.</p>
       </div>
-      <div className="border-b border-gray-800 pb-6">
-        <div className="text-center bg-gray-900 p-4 rounded-lg">
+      <div className="pb-6">
+        <div className="text-center ui-card p-4 rounded-xl">
           <p className="text-sm text-gray-400 font-medium">Your identified profile is:</p>
           <p className="text-xl font-bold text-white">{behavior.profile}</p>
         </div>
