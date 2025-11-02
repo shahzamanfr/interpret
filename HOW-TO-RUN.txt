@@ -1,0 +1,130 @@
+🎤 VOICE INPUT - HOW TO RUN
+
+═══════════════════════════════════════════════════════════════════
+
+STEP 1: GET FREE API KEY (2 minutes)
+═══════════════════════════════════════════════════════════════════
+
+Go to: https://www.assemblyai.com/
+Click "Sign Up"
+Copy your API key
+You get $50 FREE credit (3,333 minutes of audio)
+
+
+═══════════════════════════════════════════════════════════════════
+
+STEP 2: ADD API KEY (30 seconds)
+═══════════════════════════════════════════════════════════════════
+
+Create file: backend/.env
+
+Paste this:
+SPEECH_PROVIDER=assemblyai
+SPEECH_API_KEY=paste_your_key_here
+PORT=8787
+
+
+═══════════════════════════════════════════════════════════════════
+
+STEP 3: START BACKEND (1 minute)
+═══════════════════════════════════════════════════════════════════
+
+Open Terminal 1:
+
+cd backend
+npm install
+npm start
+
+You should see:
+[backend] listening on :8787
+[backend] Speech API configured: true
+
+
+═══════════════════════════════════════════════════════════════════
+
+STEP 4: START FRONTEND (1 minute)
+═══════════════════════════════════════════════════════════════════
+
+Open Terminal 2:
+
+npm run dev
+
+Opens in browser automatically
+
+
+═══════════════════════════════════════════════════════════════════
+
+STEP 5: USE IT!
+═══════════════════════════════════════════════════════════════════
+
+1. Click the BLUE microphone button 🎙️
+2. Speak into your microphone
+3. Click the RED stop button
+4. Wait 1-2 seconds
+5. Your text appears in the input field!
+
+
+═══════════════════════════════════════════════════════════════════
+
+HOW IT WORKS
+═══════════════════════════════════════════════════════════════════
+
+Click mic → Records audio → Sends to AssemblyAI API → Gets text back
+
+NO browser dependency!
+Real API transcription!
+Works in ANY browser!
+
+
+═══════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════
+
+Problem: Backend won't start
+Solution:
+  cd backend
+  npm install
+
+
+Problem: "API not configured" error
+Solution:
+  - Check backend/.env file exists
+  - Check SPEECH_API_KEY is set correctly
+  - Restart backend: npm start
+
+
+Problem: No text appears
+Solution:
+  - Make sure backend is running (Terminal 1)
+  - Check backend console for errors
+  - Verify API key has credits left
+  - Press F12 → Console tab to see errors
+
+
+Problem: "Microphone access denied"
+Solution:
+  - Allow microphone in browser
+  - Refresh page
+
+
+═══════════════════════════════════════════════════════════════════
+
+ALTERNATIVE: USE DEEPGRAM (More free credits)
+═══════════════════════════════════════════════════════════════════
+
+In backend/.env change to:
+
+SPEECH_PROVIDER=deepgram
+SPEECH_API_KEY=your_deepgram_key
+
+Get key: https://deepgram.com/ ($200 FREE = 46,512 minutes!)
+
+
+═══════════════════════════════════════════════════════════════════
+
+DONE! Your voice input works with real API transcription.
+
+Record → API → Text appears
+
+No browser speech API needed!

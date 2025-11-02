@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scroll Animation Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(to bottom, #000000, #1a1a1a);
+            color: white;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .section {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem 2rem;
+        }
+
+        .box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 3rem;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: #60a5fa;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            font-size: 1.125rem;
+            line-height: 1.6;
+            color: #9ca3af;
+        }
+
+        .status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.875rem;
+            z-index: 1000;
+        }
+
+        .status-item {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Animation Styles */
+        .scroll-animate {
+            opacity: 0;
+            transform: translateY(60px);
+            transition:
+                opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .scroll-animate.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .scroll-fade-left {
+            opacity: 0;
+            transform: translateX(-80px);
+            transition:
+                opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .scroll-fade-left.is-visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .scroll-fade-right {
+            opacity: 0;
+            transform: translateX(80px);
+            transition:
+                opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .scroll-fade-right.is-visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .scroll-scale {
+            opacity: 0;
+            transform: scale(0.85);
+            transition:
+                opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .scroll-scale.is-visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">
+        <div class="status-item">Elements found: <span id="elementCount">0</span></div>
+        <div class="status-item">Animated: <span id="animatedCount">0</span></div>
+        <div class="status-item">In viewport: <span id="viewportCount">0</span></div>
+    </div>
+
+    <div class="container">
+        <div class="section">
+            <div class="box scroll-animate">
+                <h1>🎬 Scroll Animation Test</h1>
+                <p>This page tests scroll animations. Scroll down to see elements animate into view!</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="box scroll-fade-left">
+                <h2>← Fade from Left</h2>
+                <p>This element slides in from the left side as you scroll.</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="box scroll-fade-right">
+                <h2>Fade from Right →</h2>
+                <p>This element slides in from the right side as you scroll.</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="box scroll-scale">
+                <h2>✨ Scale Animation</h2>
+                <p>This element scales up from 85% to 100% as you scroll.</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="box scroll-animate">
+                <h2>🎯 Fade Up</h2>
+                <p>This element fades up from below as you scroll.</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="box scroll-fade-left">
+                <h2>🚀 Test Complete</h2>
+                <p>If you can see all the animations working, the system is functioning correctly!</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Status tracking
+        let animatedCount = 0;
+        let viewportCount = 0;
+
+        function updateStatus() {
+            const elements = document.querySelectorAll('.scroll-animate, .scroll-fade-left, .scroll-fade-right, .scroll-scale');
+            document.getElementById('elementCount').textContent = elements.length;
+            document.getElementById('animatedCount').textContent = animatedCount;
+            document.getElementById('viewportCount').textContent = viewportCount;
+        }
+
+        // Initialize scroll animations
+        function initScrollAnimations() {
+            const elements = document.querySelectorAll(
+                '.scroll-animate, .scroll-fade-left, .scroll-fade-right, .scroll-scale'
+            );
+
+            console.log(`🎬 Scroll Animation: Found ${elements.length} elements to animate`);
+            updateStatus();
+
+            if (!elements.length) {
+                console.warn('⚠️ No scroll animation elements found!');
+                return;
+            }
+
+            // Create the observer
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            console.log(`✨ Animating element:`, entry.target);
+                            entry.target.classList.add('is-visible');
+                            animatedCount++;
+                            updateStatus();
+                            observer.unobserve(entry.target);
+                        }
+                    });
+                },
+                {
+                    threshold: 0.1,
+                    rootMargin: '0px 0px -50px 0px',
+                }
+            );
+
+            // Observe all elements
+            elements.forEach((element) => {
+                observer.observe(element);
+            });
+
+            // Check for elements already in viewport
+            setTimeout(() => {
+                viewportCount = 0;
+                elements.forEach((element) => {
+                    const rect = element.getBoundingClientRect();
+                    const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+                    const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+
+                    const isInViewport =
+                        rect.top < windowHeight - 50 &&
+                        rect.bottom > 50 &&
+                        rect.left < windowWidth &&
+                        rect.right > 0;
+
+                    if (isInViewport && !element.classList.contains('is-visible')) {
+                        console.log(`🎯 Immediately animating element already in viewport:`, element);
+                        element.classList.add('is-visible');
+                        viewportCount++;
+                        animatedCount++;
+                    }
+                });
+                console.log(`🎯 Animated ${viewportCount} elements already in viewport`);
+                updateStatus();
+            }, 150);
+        }
+
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initScrollAnimations);
+        } else {
+            initScrollAnimations();
+        }
+
+        // Update status on scroll (for debugging)
+        let scrollTimeout;
+        window.addEventListener('scroll', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(updateStatus, 100);
+        });
+    </script>
+</body>
+</html>

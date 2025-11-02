@@ -106,6 +106,20 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const withThemeTransition = () => {
     const htmlEl = document.documentElement;
     const bodyEl = document.body;
+    
+    // Ensure all scroll-animated elements are visible and stay visible permanently
+    const animatedElements = document.querySelectorAll('[data-scroll-animate]');
+    animatedElements.forEach((el) => {
+      // Add animate-in class if not already present
+      if (!el.classList.contains('animate-in')) {
+        el.classList.add('animate-in');
+      }
+      // Add permanent inline styles to prevent disappearing
+      (el as HTMLElement).style.setProperty('opacity', '1', 'important');
+      (el as HTMLElement).style.setProperty('transform', 'translateY(0)', 'important');
+      (el as HTMLElement).style.setProperty('visibility', 'visible', 'important');
+    });
+    
     // force reflow so transition applies consistently
     // and add transition classes
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -115,7 +129,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     window.setTimeout(() => {
       htmlEl.classList.remove('theme-transition');
       bodyEl.classList.remove('theme-transition');
-    }, 1200);
+      // Don't clean up inline styles - keep them permanent to prevent disappearing
+    }, 200);
   };
 
   const toggleTheme = () => {

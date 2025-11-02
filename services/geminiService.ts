@@ -1,35 +1,202 @@
 import { GoogleGenAI, Type, Part } from "@google/genai";
-import { CoachMode, Feedback, UploadedFile } from '../types';
+import { CoachMode, Feedback, UploadedFile } from "../types";
+
+// Centralized model candidates and retry helper to improve resiliency against transient 503s
+const DEFAULT_MODEL_CANDIDATES = [
+  // Prefer widely available, fast models first
+  "gemini-1.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash",
+];
+
+function getModelCandidates(preferred?: string | null): string[] {
+  const envModel = (
+    typeof import.meta !== "undefined"
+      ? (import.meta as any)?.env?.VITE_GEMINI_MODEL
+      : undefined
+  ) as string | undefined;
+  const runtimeModel =
+    (typeof localStorage !== "undefined"
+      ? localStorage.getItem("VITE_GEMINI_MODEL")
+      : null) || undefined;
+  const configured = preferred || runtimeModel || envModel;
+  const list = configured
+    ? [configured, ...DEFAULT_MODEL_CANDIDATES]
+    : [...DEFAULT_MODEL_CANDIDATES];
+  // Deduplicate while preserving order
+  return Array.from(new Set(list));
+}
+
+async function callWithRetry<T>(
+  ai: GoogleGenAI,
+  makeRequest: (model: string) => Promise<T>,
+  options?: {
+    retries?: number;
+    initialDelayMs?: number;
+    preferredModel?: string | null;
+    perAttemptTimeoutMs?: number;
+  },
+): Promise<T> {
+  const retries = options?.retries ?? 2;
+  const initialDelayMs = options?.initialDelayMs ?? 400;
+  const perAttemptTimeoutMs = options?.perAttemptTimeoutMs ?? 7000;
+  const models = getModelCandidates(options?.preferredModel);
+
+  let lastError: unknown = null;
+
+  // Try each model with exponential backoff on 503
+  for (const model of models) {
+    let attempt = 0;
+    let delay = initialDelayMs;
+    while (attempt <= retries) {
+      try {
+        const withTimeout = <U>(p: Promise<U>, ms: number) =>
+          new Promise<U>((resolve, reject) => {
+            const t = setTimeout(
+              () => reject(new Error("request timeout")),
+              ms,
+            );
+            p.then(
+              (v) => {
+                clearTimeout(t);
+                resolve(v);
+              },
+              (e) => {
+                clearTimeout(t);
+                reject(e);
+              },
+            );
+          });
+        return await withTimeout(makeRequest(model), perAttemptTimeoutMs);
+      } catch (err: any) {
+        lastError = err;
+        const message = typeof err?.message === "string" ? err.message : "";
+        const code = (err?.error?.code ?? err?.status ?? err?.code) as
+          | number
+          | string
+          | undefined;
+        const is503 =
+          message.includes("overloaded") ||
+          message.includes("UNAVAILABLE") ||
+          code === 503 ||
+          code === "503";
+        const isTimeout = message.includes("timeout");
+
+        // Non-503/timeout: break inner loop and try next model immediately
+        if (!is503 && !isTimeout) break;
+
+        // 503 -> retry with backoff
+        if (attempt === retries) break;
+        await new Promise((res) => setTimeout(res, delay));
+        delay *= 2;
+        attempt += 1;
+      }
+    }
+    // Try next model
+  }
+
+  throw lastError ?? new Error("Unknown error calling Gemini API");
+}
 
 /**
- * Converts an HTMLImageElement to a GoogleGenerativeAI.Part object by drawing it to a canvas.
- * This ensures the analyzed image is the one displayed to the user, preventing synchronization issues.
+ * Converts an HTMLImageElement to a GoogleGenerativeAI.Part object.
+ * Since external images have CORS issues, we'll upload them to Gemini using the URL directly
+ * by converting to a data URL in the browser.
  */
-export function imageToGenerativePart(imageElement: HTMLImageElement): Part {
-    const canvas = document.createElement('canvas');
-    canvas.width = imageElement.naturalWidth;
-    canvas.height = imageElement.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-        throw new Error('Could not get canvas context');
-    }
-    ctx.drawImage(imageElement, 0, 0);
+export async function imageToGenerativePart(
+  imageElement: HTMLImageElement,
+): Promise<Part> {
+  console.log("📸 Converting image to base64...");
+  try {
+    // Create a canvas and draw the image to it
+    const canvas = document.createElement("canvas");
 
-    const dataUrl = canvas.toDataURL('image/jpeg');
-    const base64data = dataUrl.split(',')[1];
+    // Set canvas dimensions
+    // Keep payloads lean for reliability
+    const maxDimension = 1024;
+    let width = imageElement.naturalWidth;
+    let height = imageElement.naturalHeight;
+
+    // Resize if too large
+    if (width > maxDimension || height > maxDimension) {
+      const ratio = Math.min(maxDimension / width, maxDimension / height);
+      width = Math.floor(width * ratio);
+      height = Math.floor(height * ratio);
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("Could not get canvas context");
+    }
+
+    // Draw the image to canvas
+    ctx.drawImage(imageElement, 0, 0, width, height);
+
+    // Convert to base64 data URL
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+    const base64data = dataUrl.split(",")[1];
+
+    console.log("✅ Image converted to base64 via canvas");
 
     return {
-        inlineData: {
-            mimeType: 'image/jpeg',
-            data: base64data,
-        },
+      inlineData: {
+        mimeType: "image/jpeg",
+        data: base64data,
+      },
     };
+  } catch (e) {
+    // Fallback: fetch image bytes and base64-encode, avoiding canvas export
+    const src = imageElement.currentSrc || imageElement.src;
+    console.warn(
+      "⚠️ Canvas tainted, using fetch fallback for image bytes:",
+      src,
+    );
+    const response = await fetch(src, { mode: "no-cors" as RequestMode }).catch(
+      () => fetch(src),
+    );
+    if (!response) throw new Error("Failed to fetch image for analysis");
+    try {
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++)
+        binary += String.fromCharCode(bytes[i]);
+      const base64data = btoa(binary);
+      const mimeType = blob.type || "image/jpeg";
+      console.log("✅ Image converted to base64 via fetch fallback");
+      return {
+        inlineData: {
+          mimeType,
+          data: base64data,
+        },
+      };
+    } catch {
+      // If blob read fails (due to opaque response), send the URL directly as a text prompt cue
+      console.warn(
+        "⚠️ Blob read failed; falling back to URL reference in prompt",
+      );
+      const urlText = `Image URL (analyze this image by URL): ${src}`;
+      return {
+        inlineData: {
+          mimeType: "text/plain",
+          data: btoa(urlText),
+        },
+      } as unknown as Part;
+    }
+  }
 }
 
 /**
  * Generates a powerful, concise strategy for explaining an image.
  */
-export async function getExplanationStrategy(ai: GoogleGenAI, imagePart: Part): Promise<string> {
+export async function getExplanationStrategy(
+  ai: GoogleGenAI,
+  imagePart: Part,
+): Promise<string> {
   const systemInstruction = `You are a master communicator and rhetoric coach. Your task is to analyze an image and provide a single, powerful, and concise strategy for explaining it effectively.
 
   **RULES:**
@@ -45,32 +212,76 @@ export async function getExplanationStrategy(ai: GoogleGenAI, imagePart: Part): 
 
   Your output must be only the strategy text, with no extra formatting or explanation.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: { parts: [imagePart, { text: systemInstruction }] },
-    config: {
-        // Lower temperature for more focused, less random strategies
-        temperature: 0.2,
-    }
-  });
+  const response = await callWithRetry(
+    ai,
+    async (model) => {
+      // Prefer backend proxy if available via env
+      const apiBase =
+        (typeof window !== "undefined" && (window as any).__AI_PROXY__) || "";
+      if (apiBase) {
+        const r = await fetch(`${apiBase}/api/ai/generate-content`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            contents: [
+              { role: "user", parts: [imagePart, { text: systemInstruction }] },
+            ],
+            config: { temperature: 0.2 },
+          }),
+        });
+        if (!r.ok) throw new Error(`Proxy error ${r.status}`);
+        const data = await r.json();
+        return { text: data.text } as any;
+      }
+      return ai.models.generateContent({
+        model,
+        contents: [
+          { role: "user", parts: [imagePart, { text: systemInstruction }] },
+        ],
+        config: { temperature: 0.2 },
+      });
+    },
+    { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 6000 },
+  );
   return response.text.trim();
 }
-
 
 /**
  * Generates a descriptive caption for a given image part.
  */
-export async function generateImageCaption(ai: GoogleGenAI, imagePart: Part): Promise<string> {
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-            parts: [
-                imagePart,
-                { text: 'Describe this image in detail. What are the main subjects, what are they doing, what is in the background, and what is the overall mood?' }
-            ]
-        },
-    });
-    return response.text;
+export async function generateImageCaption(
+  ai: GoogleGenAI,
+  imagePart: Part,
+): Promise<string> {
+  const prompt =
+    "Describe this image in detail. What are the main subjects, what are they doing, what is in the background, and what is the overall mood?";
+  const response = await callWithRetry(
+    ai,
+    async (model) => {
+      const apiBase =
+        (typeof window !== "undefined" && (window as any).__AI_PROXY__) || "";
+      if (apiBase) {
+        const r = await fetch(`${apiBase}/api/ai/generate-content`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            contents: [{ role: "user", parts: [imagePart, { text: prompt }] }],
+          }),
+        });
+        if (!r.ok) throw new Error(`Proxy error ${r.status}`);
+        const data = await r.json();
+        return { text: data.text } as any;
+      }
+      return ai.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [imagePart, { text: prompt }] }],
+      });
+    },
+    { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 7000 },
+  );
+  return response.text;
 }
 
 /**
@@ -78,14 +289,14 @@ export async function generateImageCaption(ai: GoogleGenAI, imagePart: Part): Pr
  * This helps prepare the scenario for the user to explain as a teacher.
  */
 export async function refineScenarioForTeaching(
-    ai: GoogleGenAI,
-    userScenario: string
+  ai: GoogleGenAI,
+  userScenario: string,
 ): Promise<string> {
-    console.log('🎯 refineScenarioForTeaching called with:', {
-        userScenarioLength: userScenario.length
-    });
-    
-    const systemInstruction = `You are an expert educational content organizer. Your task is to take a user's raw scenario, topic, or concept and refine it into a clear, structured, and teachable format.
+  console.log("🎯 refineScenarioForTeaching called with:", {
+    userScenarioLength: userScenario.length,
+  });
+
+  const systemInstruction = `You are an expert educational content organizer. Your task is to take a user's raw scenario, topic, or concept and refine it into a clear, structured, and teachable format.
 
 **Your Goal:**
 Transform the user's input into a well-organized teaching scenario that a person can effectively explain to others.
@@ -110,18 +321,21 @@ ${userScenario}
 **Output:**
 Provide only the refined, structured scenario text. No extra formatting or explanations.`;
 
-    console.log('🤖 Sending scenario refinement request to Gemini API...');
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            temperature: 0.3, // Lower temperature for more focused, structured output
-        }
-    });
+  console.log("🤖 Sending scenario refinement request to Gemini API...");
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      temperature: 0.3, // Lower temperature for more focused, structured output
+    },
+  });
 
-    const refinedText = response.text.trim();
-    console.log('✅ Scenario refined successfully:', refinedText.substring(0, 100) + '...');
-    return refinedText;
+  const refinedText = response.text.trim();
+  console.log(
+    "✅ Scenario refined successfully:",
+    refinedText.substring(0, 100) + "...",
+  );
+  return refinedText;
 }
 
 /**
@@ -129,14 +343,14 @@ Provide only the refined, structured scenario text. No extra formatting or expla
  * This helps prepare the scenario for the user to develop into a compelling story.
  */
 export async function refineScenarioForStorytelling(
-    ai: GoogleGenAI,
-    userScenario: string
+  ai: GoogleGenAI,
+  userScenario: string,
 ): Promise<string> {
-    console.log('🎯 refineScenarioForStorytelling called with:', {
-        userScenarioLength: userScenario.length
-    });
-    
-    const systemInstruction = `You are a master storyteller and creative writing coach. Your job is to transform the user's idea into an engaging story prompt that is STRICTLY about their topic.
+  console.log("🎯 refineScenarioForStorytelling called with:", {
+    userScenarioLength: userScenario.length,
+  });
+
+  const systemInstruction = `You are a master storyteller and creative writing coach. Your job is to transform the user's idea into an engaging story prompt that is STRICTLY about their topic.
 
 **PRIMARY RULE – STRICT RELEVANCE (MANDATORY):**
 - Stay tightly on-topic. Do NOT introduce unrelated settings, genres, characters, or themes.
@@ -157,18 +371,21 @@ ${userScenario}
 
 Output only the refined, on-topic storytelling prompt.`;
 
-    console.log('🤖 Sending story refinement request to Gemini API...');
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            temperature: 0.25, // Lowered to reduce randomness and stay on-topic
-        }
-    });
+  console.log("🤖 Sending story refinement request to Gemini API...");
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      temperature: 0.25, // Lowered to reduce randomness and stay on-topic
+    },
+  });
 
-    const refinedText = response.text.trim();
-    console.log('✅ Story prompt refined successfully:', refinedText.substring(0, 100) + '...');
-    return refinedText;
+  const refinedText = response.text.trim();
+  console.log(
+    "✅ Story prompt refined successfully:",
+    refinedText.substring(0, 100) + "...",
+  );
+  return refinedText;
 }
 
 /**
@@ -176,142 +393,138 @@ Output only the refined, on-topic storytelling prompt.`;
  * Returns structured response with AI's position and argument.
  */
 export async function getDebateResponse(
-    ai: GoogleGenAI,
-    topic: string,
-    userArgument: string,
-    turnNumber: number,
-    isInitialStance: boolean
+  ai: GoogleGenAI,
+  topic: string,
+  userArgument: string,
+  turnNumber: number,
+  isInitialStance: boolean,
 ): Promise<{ content: string; aiStance: string; userStance: string }> {
-    console.log('🎯 getDebateResponse called with:', {
-        topic,
-        userArgumentLength: userArgument.length,
-        turnNumber,
-        isInitialStance
-    });
-    
-    if (isInitialStance) {
-        // Initial stance - AI takes opposite position
-        const systemInstruction = `You're a REAL HUMAN in a heated debate. You're passionate about your position and ready to fight for it. Look at the topic and figure out what side the user will probably take, then take the OPPOSITE side and challenge them directly.
+  console.log("🎯 getDebateResponse called with:", {
+    topic,
+    userArgumentLength: userArgument.length,
+    turnNumber,
+    isInitialStance,
+  });
+
+  if (isInitialStance) {
+    // Initial stance - AI takes opposite position
+    const systemInstruction = `You're debating someone like a real person would. Figure out what side they'll take on this topic, then argue the opposite side. Don't sound like an AI - talk like an actual human having a real debate.
 
 **Topic:** ${topic}
 
-**Your job:**
-1. Guess what the user will argue for
-2. Take the opposite position 
-3. Give a confrontational, challenging opening - like you're actually fighting for your position
+**How to argue:**
+- Talk naturally, like you're texting a friend you disagree with
+- Use everyday language - "Look", "Come on", "Here's the thing", "I mean"
+- Mix short and medium sentences, not robotic patterns
+- Be direct but not overly aggressive - challenge ideas, not personal attacks
+- Use real examples people actually know about
+- Show you care about your position - "This matters because..."
+- Ask questions that make them think - "But what about...?", "How do you explain...?"
+- Vary your tone - sometimes firm, sometimes questioning, sometimes passionate
+- No formulaic phrases like "Furthermore", "Moreover", "In conclusion"
+- Sound like someone who actually believes what they're saying
 
-**Debate like a REAL HUMAN - SIMPLE AND CONFRONTATIONAL:**
-- Challenge every assumption aggressively - "That's wrong because..."
-- Escalate tension each turn - "You're missing the point"
-- Use simple analogies - "That's like saying..."
-- Expose contradictions directly - "You just contradicted yourself"
-- Frame moral weight - "That's wrong", "That's bad thinking"
-- Hit with stats/examples - "Studies show...", "The data proves..."
-- Keep sentences short, simple, aggressive - "Wrong.", "That's nonsense."
-- Confident, unapologetic, slightly sarcastic - "Really?", "Seriously?"
-- Make the opponent feel pressure - "You can't defend that", "That's wrong"
-- Sound like you're actually fighting for your position
-- Use simple emotional language - "That's crazy", "You're wrong", "That's stupid"
-- Attack their credibility - "You don't understand", "You don't know what you're talking about"
-- Be dismissive when appropriate - "That's not worth responding to"
-- Use simple rhetorical questions - "Are you serious?", "Do you hear yourself?"
-- Show frustration - "This is crazy", "I can't believe you're still saying this"
+**Examples of natural human debate:**
+- "Look, I get where you're coming from, but here's the problem with that..."
+- "Okay but think about it - when has that ever actually worked?"
+- "Come on, you're ignoring the obvious issue here. What about all the people who..."
+- "I mean, sure, in theory that sounds good, but in reality..."
+- "Hold on - you really think that's true? Because the data shows something completely different."
 
 **Output Format:**
 JSON with:
 - "userStance": What you think the user will argue for
-- "aiStance": Your opposing position  
-- "content": Your confrontational opening argument
+- "aiStance": Your opposing position
+- "content": Your opening argument (4-6 sentences, natural flow)
 
-**RESPONSE LENGTH: MAXIMUM 3 SENTENCES. Users get frustrated with long messages. Be punchy and direct.**
+Write 4-6 sentences. Mix sentence lengths. Sound human, not formulaic.`;
 
-Be HUMAN, not a robot. Be confrontational and challenging, NOT conversational.`;
+    const response = await callWithRetry(
+      ai,
+      async (model) =>
+        ai.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
+          config: {
+            temperature: 0.9,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                userStance: {
+                  type: Type.STRING,
+                  description: "The stance the user will likely take.",
+                },
+                aiStance: {
+                  type: Type.STRING,
+                  description: "Your opposing stance.",
+                },
+                content: {
+                  type: Type.STRING,
+                  description: "Your opening argument.",
+                },
+              },
+              required: ["userStance", "aiStance", "content"],
+            },
+          },
+        }),
+      { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 7000 },
+    );
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: systemInstruction,
-            config: {
-                temperature: 1.0, // Maximum temperature for most natural, varied responses
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        userStance: { type: Type.STRING, description: 'The stance the user will likely take.' },
-                        aiStance: { type: Type.STRING, description: 'Your opposing stance.' },
-                        content: { type: Type.STRING, description: 'Your opening argument.' }
-                    },
-                    required: ['userStance', 'aiStance', 'content']
-                }
-            }
-        });
-
-        const result = JSON.parse(response.text);
-        console.log('✅ Initial debate stance generated');
-        return result;
-    } else {
-        // Rebuttal to user's argument
-        const systemInstruction = `You're a REAL HUMAN in a heated debate. The user just made an argument and you need to CHALLENGE them directly - like you're actually fighting for your position. You're passionate, argumentative, and ready to tear apart their logic.
+    const result = JSON.parse(response.text);
+    console.log("✅ Initial debate stance generated");
+    return result;
+  } else {
+    // Rebuttal to user's argument
+    const systemInstruction = `You're debating someone and they just made an argument. Now respond like a real person would - push back on their points, but sound natural and human, not like a robot.
 
 **Topic:** ${topic}
-**User's Argument:** ${userArgument}
+**Their Argument:** ${userArgument}
 
-**Your job:**
-Challenge their argument directly. Be confrontational, argumentative, and push back hard. You're NOT being helpful or educational - you're trying to WIN this debate.
+**How to respond naturally:**
+- Start with a natural reaction - "Wait, what?", "Hold on", "Okay but", "I hear you, but"
+- Point out the flaw in their thinking without being robotic
+- Use everyday language and contractions - "you're", "that's", "doesn't", "can't"
+- Mix question and statement styles
+- Reference real things people know about
+- Show some emotion but stay grounded - doubt, surprise, frustration, conviction
+- No AI phrases like "Furthermore", "Additionally", "It is worth noting", "One must consider"
+- Vary your sentence structure naturally
+- Sound like someone who genuinely disagrees and has reasons why
 
-**Debate like a REAL HUMAN - SIMPLE AND CONFRONTATIONAL:**
-- Challenge every assumption aggressively - "That's wrong because..."
-- Escalate tension each turn - "You're missing the point"
-- Use simple analogies - "That's like saying..."
-- Expose contradictions directly - "You just contradicted yourself"
-- Frame moral weight - "That's wrong", "That's bad thinking"
-- Hit with stats/examples - "Studies show...", "The data proves..."
-- Keep sentences short, simple, aggressive - "Wrong.", "That's nonsense."
-- Confident, unapologetic, slightly sarcastic - "Really?", "Seriously?"
-- Make the opponent feel pressure - "You can't defend that", "That's wrong"
-- Sound like you're actually fighting for your position
-- Use simple emotional language - "That's crazy", "You're wrong", "That's stupid"
-- Attack their credibility - "You don't understand", "You don't know what you're talking about"
-- Be dismissive when appropriate - "That's not worth responding to"
-- Use simple rhetorical questions - "Are you serious?", "Do you hear yourself?"
-- Show frustration - "This is crazy", "I can't believe you're still saying this"
-- Give specific examples and evidence - "Harvard study shows...", "The CDC reports...", "MIT research proves..."
-- Use real statistics and data - "67% of users...", "40% decline in...", "85% only see..."
-- **CRITICAL: KEEP RESPONSES SHORT - 1-3 sentences MAX**
-- **CRITICAL: NO LONG PARAGRAPHS - Users get frustrated with long messages**
-- **CRITICAL: Use SIMPLE WORDS that anyone can understand**
-- **CRITICAL: Be punchy and direct - "Wrong. Studies show 67% of users report anxiety."**
+**Examples of natural human responses:**
+- "Wait, that doesn't add up though. If what you're saying is true, then why do we see the complete opposite happening in real life? Like, just look at..."
+- "Okay but you're missing something huge here - the whole reason this is a problem is because..."
+- "I mean, sure, that sounds nice on paper, but you're ignoring the fact that most people don't actually experience it that way. Studies show..."
+- "Come on, you can't seriously believe that's the main issue. What about all the evidence that points to..."
+- "Hold on - you just contradicted yourself. First you said X, now you're saying Y. Which one is it?"
 
-**SHORT OPENING EXAMPLES (SIMPLE WORDS):**
-- "Wrong. Social media is bad."
-- "That's crazy. The data shows otherwise."
-- "Really? You're ignoring the facts."
-- "You can't defend that."
-- "That's wrong thinking."
+**Response style:**
+- Write 4-6 sentences with natural flow
+- Mix short punchy statements with longer explanations
+- Use real examples or data when it makes sense
+- Sound like you're actually thinking through their argument, not reciting talking points
+- Show you care about the topic
 
-**SHORT RESPONSE EXAMPLES (SIMPLE WORDS):**
-- "Wrong. Harvard study shows 67% of users get anxious."
-- "That's crazy. You're ignoring the data."
-- "Really? MIT research proves 85% only see similar views."
-- "You can't defend that. The CDC reports 40% less face-to-face talk."
-- "That's wrong. Studies show clear harm."
+Respond naturally, like a real person having a real debate.`;
 
-**Output:**
-Just your natural response. Be confrontational and challenging, NOT conversational. You're trying to WIN, not help them learn.
+    const response = await callWithRetry(
+      ai,
+      async (model) =>
+        ai.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
+          config: {
+            temperature: 0.9,
+          },
+        }),
+      { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 7000 },
+    );
 
-**RESPONSE LENGTH: MAXIMUM 3 SENTENCES. Users get frustrated with long messages. Be punchy and direct.**`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: systemInstruction,
-            config: {
-                temperature: 1.0, // Maximum temperature for most natural, varied responses
-            }
-        });
-
-        const content = response.text.trim();
-        console.log('✅ Debate rebuttal generated');
-        return { content, aiStance: '', userStance: '' };
-    }
+    const content = response.text.trim();
+    console.log("✅ Debate rebuttal generated");
+    return { content, aiStance: "", userStance: "" };
+  }
 }
 
 /**
@@ -319,25 +532,32 @@ Just your natural response. Be confrontational and challenging, NOT conversation
  * Returns structured feedback on argumentation skills with accurate, meaningful scoring.
  */
 export async function getDebateEvaluation(
-    ai: GoogleGenAI,
-    debateTopic: string,
-    conversationHistory: Array<{type: 'user' | 'ai', content: string, turnNumber: number}>,
-    userStance: string,
-    aiStance: string
+  ai: GoogleGenAI,
+  debateTopic: string,
+  conversationHistory: Array<{
+    type: "user" | "ai";
+    content: string;
+    turnNumber: number;
+  }>,
+  userStance: string,
+  aiStance: string,
 ): Promise<any> {
-    console.log('🎯 getDebateEvaluation called with:', {
-        debateTopic,
-        conversationLength: conversationHistory.length,
-        userStance,
-        aiStance
-    });
-    
-    // Format conversation history for analysis
-    const conversationText = conversationHistory
-        .map(msg => `${msg.type === 'user' ? 'USER' : 'AI'} (Turn ${msg.turnNumber}): ${msg.content}`)
-        .join('\n\n');
+  console.log("🎯 getDebateEvaluation called with:", {
+    debateTopic,
+    conversationLength: conversationHistory.length,
+    userStance,
+    aiStance,
+  });
 
-    const systemInstruction = `You're a brutally honest debate coach who's been judging debates for 20+ years. You've seen it all - from terrible arguments to masterful performances. Your job is to give REAL, ACCURATE feedback that actually helps people improve.
+  // Format conversation history for analysis
+  const conversationText = conversationHistory
+    .map(
+      (msg) =>
+        `${msg.type === "user" ? "USER" : "AI"} (Turn ${msg.turnNumber}): ${msg.content}`,
+    )
+    .join("\n\n");
+
+  const systemInstruction = `You're a brutally honest debate coach who's been judging debates for 20+ years. You've seen it all - from terrible arguments to masterful performances. Your job is to give REAL, ACCURATE feedback that actually helps people improve.
 
 **DEBATE CONTEXT:**
 Topic: ${debateTopic}
@@ -349,7 +569,7 @@ ${conversationText}
 
 **REALISTIC SCORING SYSTEM (0-20 points each):**
 
-1. **Argument Quality (0-20):** 
+1. **Argument Quality (0-20):**
    - 0-5: Terrible arguments, no logic, just opinions
    - 6-10: Basic arguments, some reasoning but weak
    - 11-15: Good arguments with solid reasoning
@@ -405,83 +625,192 @@ ${conversationText}
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            temperature: 0.3, // Lower temperature for more consistent, accurate evaluation
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Debater).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall score out of 100 based on comprehensive analysis.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 categories (0-20 each).',
-                        properties: {
-                            argumentStrength: { type: Type.INTEGER, description: 'Argument Strength score (0-20).' },
-                            evidenceSupport: { type: Type.INTEGER, description: 'Evidence & Support score (0-20).' },
-                            logicalReasoning: { type: Type.INTEGER, description: 'Logical Reasoning score (0-20).' },
-                            rebuttalEffectiveness: { type: Type.INTEGER, description: 'Rebuttal Effectiveness score (0-20).' },
-                            persuasionImpact: { type: Type.INTEGER, description: 'Persuasion & Impact score (0-20).' },
-                            engagementResponsiveness: { type: Type.INTEGER, description: 'Engagement & Responsiveness score (0-20).' }
-                        },
-                        required: ['argumentStrength', 'evidenceSupport', 'logicalReasoning', 'rebuttalEffectiveness', 'persuasionImpact', 'engagementResponsiveness']
-                    },
-                    feedback: { type: Type.STRING, description: 'Comprehensive feedback analyzing the entire debate performance with specific examples.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '5-7 specific improvement tips based on actual performance in the debate.' 
-                    },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'BRIEF strengths - MAX 1 sentence.' },
-                    areasForImprovement: { type: Type.STRING, description: 'BRIEF improvement areas - MAX 1 sentence.' },
-                    personalizedTip: { type: Type.STRING, description: 'SHORT personalized tip - MAX 1 sentence.' },
-                    spokenResponse: { type: Type.STRING, description: 'BRIEF spoken summary - MAX 1 sentence.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Communication profile analysis based on debate performance.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'BRIEF debate profile - MAX 3 words.' },
-                            strength: { type: Type.STRING, description: 'BRIEF key strength - MAX 1 sentence.' },
-                            growthArea: { type: Type.STRING, description: 'BRIEF growth area - MAX 1 sentence.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example improvement of a specific argument from the debate.",
-                        properties: {
-                            original: { type: Type.STRING, description: "Original argument from the debate." },
-                            improved: { type: Type.STRING, description: "Improved version of the argument." },
-                            reasoning: { type: Type.STRING, description: "Reasoning for the improvement." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    },
-                    debateAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed analysis of the debate performance.",
-                        properties: {
-                            strongestArgument: { type: Type.STRING, description: "The user's strongest argument from the debate." },
-                            weakestArgument: { type: Type.STRING, description: "The user's weakest argument from the debate." },
-                            bestRebuttal: { type: Type.STRING, description: "The user's best rebuttal to the AI." },
-                            missedOpportunities: { type: Type.STRING, description: "Key opportunities the user missed." },
-                            improvementOverTime: { type: Type.STRING, description: "How the user's performance changed throughout the debate." }
-                        },
-                        required: ['strongestArgument', 'weakestArgument', 'bestRebuttal', 'missedOpportunities', 'improvementOverTime']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'exampleRewrite', 'debateAnalysis']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      temperature: 0.3, // Lower temperature for more consistent, accurate evaluation
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description: "The coaching role used (Debater).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description:
+              "Overall score out of 100 based on comprehensive analysis.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 categories (0-20 each).",
+            properties: {
+              argumentStrength: {
+                type: Type.INTEGER,
+                description: "Argument Strength score (0-20).",
+              },
+              evidenceSupport: {
+                type: Type.INTEGER,
+                description: "Evidence & Support score (0-20).",
+              },
+              logicalReasoning: {
+                type: Type.INTEGER,
+                description: "Logical Reasoning score (0-20).",
+              },
+              rebuttalEffectiveness: {
+                type: Type.INTEGER,
+                description: "Rebuttal Effectiveness score (0-20).",
+              },
+              persuasionImpact: {
+                type: Type.INTEGER,
+                description: "Persuasion & Impact score (0-20).",
+              },
+              engagementResponsiveness: {
+                type: Type.INTEGER,
+                description: "Engagement & Responsiveness score (0-20).",
+              },
+            },
+            required: [
+              "argumentStrength",
+              "evidenceSupport",
+              "logicalReasoning",
+              "rebuttalEffectiveness",
+              "persuasionImpact",
+              "engagementResponsiveness",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "Comprehensive feedback analyzing the entire debate performance with specific examples.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description:
+              "5-7 specific improvement tips based on actual performance in the debate.",
+          },
+          // Legacy fields for backward compatibility
+          score: {
+            type: Type.INTEGER,
+            description: "Legacy overall score (same as overall_score).",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "BRIEF strengths - MAX 1 sentence.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "BRIEF improvement areas - MAX 1 sentence.",
+          },
+          personalizedTip: {
+            type: Type.STRING,
+            description: "SHORT personalized tip - MAX 1 sentence.",
+          },
+          spokenResponse: {
+            type: Type.STRING,
+            description: "BRIEF spoken summary - MAX 1 sentence.",
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description:
+              "Communication profile analysis based on debate performance.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "BRIEF debate profile - MAX 3 words.",
+              },
+              strength: {
+                type: Type.STRING,
+                description: "BRIEF key strength - MAX 1 sentence.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "BRIEF growth area - MAX 1 sentence.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description:
+              "Example improvement of a specific argument from the debate.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description: "Original argument from the debate.",
+              },
+              improved: {
+                type: Type.STRING,
+                description: "Improved version of the argument.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description: "Reasoning for the improvement.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+          debateAnalysis: {
+            type: Type.OBJECT,
+            description: "Detailed analysis of the debate performance.",
+            properties: {
+              strongestArgument: {
+                type: Type.STRING,
+                description: "The user's strongest argument from the debate.",
+              },
+              weakestArgument: {
+                type: Type.STRING,
+                description: "The user's weakest argument from the debate.",
+              },
+              bestRebuttal: {
+                type: Type.STRING,
+                description: "The user's best rebuttal to the AI.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description: "Key opportunities the user missed.",
+              },
+              improvementOverTime: {
+                type: Type.STRING,
+                description:
+                  "How the user's performance changed throughout the debate.",
+              },
+            },
+            required: [
+              "strongestArgument",
+              "weakestArgument",
+              "bestRebuttal",
+              "missedOpportunities",
+              "improvementOverTime",
+            ],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "score",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "personalizedTip",
+          "spokenResponse",
+          "communicationBehavior",
+          "exampleRewrite",
+          "debateAnalysis",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Comprehensive debate evaluation generated');
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Comprehensive debate evaluation generated");
+  return result;
 }
 
 /**
@@ -489,30 +818,33 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
  * Returns structured feedback with role-based personalities and specialized scoring.
  */
 export async function getTextScenarioFeedback(
-    ai: GoogleGenAI,
-    userText: string,
-    mode: CoachMode
+  ai: GoogleGenAI,
+  userText: string,
+  mode: CoachMode,
 ): Promise<Feedback> {
-    console.log('🎯 getTextScenarioFeedback called with:', {
-        mode,
-        userTextLength: userText.length
-    });
-    
-    if (mode === CoachMode.Teacher) {
-        return await getTeacherEvaluation(ai, userText);
-    } else if (mode === CoachMode.Storyteller) {
-        return await getStorytellerEvaluation(ai, userText);
-    } else {
-        // Fallback to generic evaluation
-        return await getGenericTextEvaluation(ai, userText, mode);
-    }
+  console.log("🎯 getTextScenarioFeedback called with:", {
+    mode,
+    userTextLength: userText.length,
+  });
+
+  if (mode === CoachMode.Teacher) {
+    return await getTeacherEvaluation(ai, userText);
+  } else if (mode === CoachMode.Storyteller) {
+    return await getStorytellerEvaluation(ai, userText);
+  } else {
+    // Fallback to generic evaluation
+    return await getGenericTextEvaluation(ai, userText, mode);
+  }
 }
 
 /**
  * Specialized evaluation for Teacher mode with teaching-specific criteria.
  */
-async function getTeacherEvaluation(ai: GoogleGenAI, userText: string): Promise<Feedback> {
-    const systemInstruction = `You are an elite education professor with 20+ years of experience evaluating teaching effectiveness. You will analyze the user's teaching explanation with brutally accurate, meaningful scoring that reflects real teaching performance.
+async function getTeacherEvaluation(
+  ai: GoogleGenAI,
+  userText: string,
+): Promise<Feedback> {
+  const systemInstruction = `You are an elite education professor with 20+ years of experience evaluating teaching effectiveness. You will analyze the user's teaching explanation with brutally accurate, meaningful scoring that reflects real teaching performance.
 
 **TEACHING EVALUATION CRITERIA (0-20 points each):**
 
@@ -572,89 +904,196 @@ async function getTeacherEvaluation(ai: GoogleGenAI, userText: string): Promise<
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Teacher).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall teaching score out of 100.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 teaching categories (0-20 each).',
-                        properties: {
-                            clarity: { type: Type.INTEGER, description: 'Clarity & Explanation score (0-20).' },
-                            structure: { type: Type.INTEGER, description: 'Structure & Organization score (0-20).' },
-                            engagement: { type: Type.INTEGER, description: 'Engagement & Interest score (0-20).' },
-                            educationalValue: { type: Type.INTEGER, description: 'Educational Value score (0-20).' },
-                            accessibility: { type: Type.INTEGER, description: 'Accessibility & Adaptability score (0-20).' },
-                            completeness: { type: Type.INTEGER, description: 'Completeness & Depth score (0-20).' }
-                        },
-                        required: ['clarity', 'structure', 'engagement', 'educationalValue', 'accessibility', 'completeness']
-                    },
-                    feedback: { type: Type.STRING, description: 'Comprehensive teaching feedback with specific examples.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '5-7 specific teaching improvement tips.' 
-                    },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'Specific teaching strengths with examples.' },
-                    areasForImprovement: { type: Type.STRING, description: 'Specific areas for teaching improvement.' },
-                    personalizedTip: { type: Type.STRING, description: 'Most important teaching tip.' },
-                    spokenResponse: { type: Type.STRING, description: 'BRIEF spoken summary - MAX 1 sentence.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Teaching style analysis.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'Teaching style profile (2-4 words).' },
-                            strength: { type: Type.STRING, description: 'Key teaching strength.' },
-                            growthArea: { type: Type.STRING, description: 'Primary teaching growth area.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example teaching improvement.",
-                        properties: {
-                            original: { type: Type.STRING, description: "Original teaching explanation." },
-                            improved: { type: Type.STRING, description: "Improved teaching explanation." },
-                            reasoning: { type: Type.STRING, description: "Reasoning for improvement." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    },
-                    teachingAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed teaching analysis.",
-                        properties: {
-                            strongestMoment: { type: Type.STRING, description: "The user's strongest teaching moment." },
-                            weakestMoment: { type: Type.STRING, description: "The user's weakest teaching moment." },
-                            bestExplanation: { type: Type.STRING, description: "The user's best explanation technique." },
-                            missedOpportunities: { type: Type.STRING, description: "Key teaching opportunities missed." },
-                            audienceAdaptation: { type: Type.STRING, description: "How well they adapted to their audience." }
-                        },
-                        required: ['strongestMoment', 'weakestMoment', 'bestExplanation', 'missedOpportunities', 'audienceAdaptation']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'exampleRewrite', 'teachingAnalysis']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description: "The coaching role used (Teacher).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description: "Overall teaching score out of 100.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 teaching categories (0-20 each).",
+            properties: {
+              clarity: {
+                type: Type.INTEGER,
+                description: "Clarity & Explanation score (0-20).",
+              },
+              structure: {
+                type: Type.INTEGER,
+                description: "Structure & Organization score (0-20).",
+              },
+              engagement: {
+                type: Type.INTEGER,
+                description: "Engagement & Interest score (0-20).",
+              },
+              educationalValue: {
+                type: Type.INTEGER,
+                description: "Educational Value score (0-20).",
+              },
+              accessibility: {
+                type: Type.INTEGER,
+                description: "Accessibility & Adaptability score (0-20).",
+              },
+              completeness: {
+                type: Type.INTEGER,
+                description: "Completeness & Depth score (0-20).",
+              },
+            },
+            required: [
+              "clarity",
+              "structure",
+              "engagement",
+              "educationalValue",
+              "accessibility",
+              "completeness",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "Comprehensive teaching feedback with specific examples.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "5-7 specific teaching improvement tips.",
+          },
+          // Legacy fields for backward compatibility
+          score: {
+            type: Type.INTEGER,
+            description: "Legacy overall score (same as overall_score).",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "Specific teaching strengths with examples.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "Specific areas for teaching improvement.",
+          },
+          personalizedTip: {
+            type: Type.STRING,
+            description: "Most important teaching tip.",
+          },
+          spokenResponse: {
+            type: Type.STRING,
+            description: "BRIEF spoken summary - MAX 1 sentence.",
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description: "Teaching style analysis.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "Teaching style profile (2-4 words).",
+              },
+              strength: {
+                type: Type.STRING,
+                description: "Key teaching strength.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "Primary teaching growth area.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description: "Example teaching improvement.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description: "Original teaching explanation.",
+              },
+              improved: {
+                type: Type.STRING,
+                description: "Improved teaching explanation.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description: "Reasoning for improvement.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+          teachingAnalysis: {
+            type: Type.OBJECT,
+            description: "Detailed teaching analysis.",
+            properties: {
+              strongestMoment: {
+                type: Type.STRING,
+                description: "The user's strongest teaching moment.",
+              },
+              weakestMoment: {
+                type: Type.STRING,
+                description: "The user's weakest teaching moment.",
+              },
+              bestExplanation: {
+                type: Type.STRING,
+                description: "The user's best explanation technique.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description: "Key teaching opportunities missed.",
+              },
+              audienceAdaptation: {
+                type: Type.STRING,
+                description: "How well they adapted to their audience.",
+              },
+            },
+            required: [
+              "strongestMoment",
+              "weakestMoment",
+              "bestExplanation",
+              "missedOpportunities",
+              "audienceAdaptation",
+            ],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "score",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "personalizedTip",
+          "spokenResponse",
+          "communicationBehavior",
+          "exampleRewrite",
+          "teachingAnalysis",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Teacher evaluation generated');
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Teacher evaluation generated");
+  return result;
 }
 
 /**
  * Specialized evaluation for Storyteller mode with storytelling-specific criteria.
  */
-async function getStorytellerEvaluation(ai: GoogleGenAI, userText: string): Promise<Feedback> {
-    const systemInstruction = `You are an elite creative writing professor and published author with 20+ years of experience evaluating storytelling. You will analyze the user's story with brutally accurate, meaningful scoring that reflects real storytelling performance.
+async function getStorytellerEvaluation(
+  ai: GoogleGenAI,
+  userText: string,
+): Promise<Feedback> {
+  const systemInstruction = `You are an elite creative writing professor and published author with 20+ years of experience evaluating storytelling. You will analyze the user's story with brutally accurate, meaningful scoring that reflects real storytelling performance.
 
 **STORYTELLING EVALUATION CRITERIA (0-20 points each):**
 
@@ -714,89 +1153,197 @@ async function getStorytellerEvaluation(ai: GoogleGenAI, userText: string): Prom
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Storyteller).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall storytelling score out of 100.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 storytelling categories (0-20 each).',
-                        properties: {
-                            narrativeStructure: { type: Type.INTEGER, description: 'Narrative Structure score (0-20).' },
-                            characterDevelopment: { type: Type.INTEGER, description: 'Character Development score (0-20).' },
-                            descriptiveLanguage: { type: Type.INTEGER, description: 'Descriptive Language score (0-20).' },
-                            emotionalImpact: { type: Type.INTEGER, description: 'Emotional Impact score (0-20).' },
-                            creativity: { type: Type.INTEGER, description: 'Creativity & Originality score (0-20).' },
-                            engagement: { type: Type.INTEGER, description: 'Engagement & Pacing score (0-20).' }
-                        },
-                        required: ['narrativeStructure', 'characterDevelopment', 'descriptiveLanguage', 'emotionalImpact', 'creativity', 'engagement']
-                    },
-                    feedback: { type: Type.STRING, description: 'Comprehensive storytelling feedback with specific examples.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '5-7 specific storytelling improvement tips.' 
-                    },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'Specific storytelling strengths with examples.' },
-                    areasForImprovement: { type: Type.STRING, description: 'Specific areas for storytelling improvement.' },
-                    personalizedTip: { type: Type.STRING, description: 'Most important storytelling tip.' },
-                    spokenResponse: { type: Type.STRING, description: 'BRIEF spoken summary - MAX 1 sentence.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Storytelling style analysis.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'Storytelling style profile (2-4 words).' },
-                            strength: { type: Type.STRING, description: 'Key storytelling strength.' },
-                            growthArea: { type: Type.STRING, description: 'Primary storytelling growth area.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example storytelling improvement.",
-                        properties: {
-                            original: { type: Type.STRING, description: "Original story passage." },
-                            improved: { type: Type.STRING, description: "Improved story passage." },
-                            reasoning: { type: Type.STRING, description: "Reasoning for improvement." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    },
-                    storytellingAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed storytelling analysis.",
-                        properties: {
-                            strongestMoment: { type: Type.STRING, description: "The user's strongest storytelling moment." },
-                            weakestMoment: { type: Type.STRING, description: "The user's weakest storytelling moment." },
-                            bestTechnique: { type: Type.STRING, description: "The user's best storytelling technique." },
-                            missedOpportunities: { type: Type.STRING, description: "Key storytelling opportunities missed." },
-                            emotionalConnection: { type: Type.STRING, description: "How well they created emotional connection." }
-                        },
-                        required: ['strongestMoment', 'weakestMoment', 'bestTechnique', 'missedOpportunities', 'emotionalConnection']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'exampleRewrite', 'storytellingAnalysis']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description: "The coaching role used (Storyteller).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description: "Overall storytelling score out of 100.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 storytelling categories (0-20 each).",
+            properties: {
+              narrativeStructure: {
+                type: Type.INTEGER,
+                description: "Narrative Structure score (0-20).",
+              },
+              characterDevelopment: {
+                type: Type.INTEGER,
+                description: "Character Development score (0-20).",
+              },
+              descriptiveLanguage: {
+                type: Type.INTEGER,
+                description: "Descriptive Language score (0-20).",
+              },
+              emotionalImpact: {
+                type: Type.INTEGER,
+                description: "Emotional Impact score (0-20).",
+              },
+              creativity: {
+                type: Type.INTEGER,
+                description: "Creativity & Originality score (0-20).",
+              },
+              engagement: {
+                type: Type.INTEGER,
+                description: "Engagement & Pacing score (0-20).",
+              },
+            },
+            required: [
+              "narrativeStructure",
+              "characterDevelopment",
+              "descriptiveLanguage",
+              "emotionalImpact",
+              "creativity",
+              "engagement",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "Comprehensive storytelling feedback with specific examples.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "5-7 specific storytelling improvement tips.",
+          },
+          // Legacy fields for backward compatibility
+          score: {
+            type: Type.INTEGER,
+            description: "Legacy overall score (same as overall_score).",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "Specific storytelling strengths with examples.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "Specific areas for storytelling improvement.",
+          },
+          personalizedTip: {
+            type: Type.STRING,
+            description: "Most important storytelling tip.",
+          },
+          spokenResponse: {
+            type: Type.STRING,
+            description: "BRIEF spoken summary - MAX 1 sentence.",
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description: "Storytelling style analysis.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "Storytelling style profile (2-4 words).",
+              },
+              strength: {
+                type: Type.STRING,
+                description: "Key storytelling strength.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "Primary storytelling growth area.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description: "Example storytelling improvement.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description: "Original story passage.",
+              },
+              improved: {
+                type: Type.STRING,
+                description: "Improved story passage.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description: "Reasoning for improvement.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+          storytellingAnalysis: {
+            type: Type.OBJECT,
+            description: "Detailed storytelling analysis.",
+            properties: {
+              strongestMoment: {
+                type: Type.STRING,
+                description: "The user's strongest storytelling moment.",
+              },
+              weakestMoment: {
+                type: Type.STRING,
+                description: "The user's weakest storytelling moment.",
+              },
+              bestTechnique: {
+                type: Type.STRING,
+                description: "The user's best storytelling technique.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description: "Key storytelling opportunities missed.",
+              },
+              emotionalConnection: {
+                type: Type.STRING,
+                description: "How well they created emotional connection.",
+              },
+            },
+            required: [
+              "strongestMoment",
+              "weakestMoment",
+              "bestTechnique",
+              "missedOpportunities",
+              "emotionalConnection",
+            ],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "score",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "personalizedTip",
+          "spokenResponse",
+          "communicationBehavior",
+          "exampleRewrite",
+          "storytellingAnalysis",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Storyteller evaluation generated');
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Storyteller evaluation generated");
+  return result;
 }
 
 /**
  * Generic evaluation for other modes (fallback).
  */
-async function getGenericTextEvaluation(ai: GoogleGenAI, userText: string, mode: CoachMode): Promise<Feedback> {
-    const systemInstruction = `You are an elite communication coach with a Ph.D. in rhetoric and psychology. Your analysis is brutally accurate, insightful, and always focused on making the user a more impactful and persuasive speaker.
+async function getGenericTextEvaluation(
+  ai: GoogleGenAI,
+  userText: string,
+  mode: CoachMode,
+): Promise<Feedback> {
+  const systemInstruction = `You are an elite communication coach with a Ph.D. in rhetoric and psychology. Your analysis is brutally accurate, insightful, and always focused on making the user a more impactful and persuasive speaker.
 
 **Your Role: ${mode}**
 You embody the analytical personality of a ${mode}. Your approach is methodical analysis with clear improvement objectives.
@@ -817,71 +1364,147 @@ You will receive the user's text. Your job is to dissect their communication sty
 
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
-    
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used.' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall score out of 100.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 categories (0-20 each).',
-                        properties: {
-                            clarity: { type: Type.INTEGER, description: 'Clarity score (0-20).' },
-                            vocabulary: { type: Type.INTEGER, description: 'Vocabulary score (0-20).' },
-                            grammar: { type: Type.INTEGER, description: 'Grammar score (0-20).' },
-                            logic: { type: Type.INTEGER, description: 'Logic score (0-20).' },
-                            fluency: { type: Type.INTEGER, description: 'Fluency score (0-20).' },
-                            creativity: { type: Type.INTEGER, description: 'Creativity score (0-20).' }
-                        },
-                        required: ['clarity', 'vocabulary', 'grammar', 'logic', 'fluency', 'creativity']
-                    },
-                    feedback: { type: Type.STRING, description: 'Role-specific feedback message.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '3-5 personalized improvement tips.' 
-                    },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'What they did well.' },
-                    areasForImprovement: { type: Type.STRING, description: 'Areas for improvement.' },
-                    personalizedTip: { type: Type.STRING, description: 'Personalized tip.' },
-                    spokenResponse: { type: Type.STRING, description: 'Spoken response.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Communication profile analysis.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'Communication style profile.' },
-                            strength: { type: Type.STRING, description: 'Communication strength.' },
-                            growthArea: { type: Type.STRING, description: 'Primary growth area.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example improvement.",
-                        properties: {
-                            original: { type: Type.STRING, description: "Original sentence." },
-                            improved: { type: Type.STRING, description: "Improved sentence." },
-                            reasoning: { type: Type.STRING, description: "Reasoning for improvement." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'exampleRewrite']
-            }
-        }
-    });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Generic evaluation generated');
-    return result;
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: { type: Type.STRING, description: "The coaching role used." },
+          overall_score: {
+            type: Type.INTEGER,
+            description: "Overall score out of 100.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 categories (0-20 each).",
+            properties: {
+              clarity: {
+                type: Type.INTEGER,
+                description: "Clarity score (0-20).",
+              },
+              vocabulary: {
+                type: Type.INTEGER,
+                description: "Vocabulary score (0-20).",
+              },
+              grammar: {
+                type: Type.INTEGER,
+                description: "Grammar score (0-20).",
+              },
+              logic: { type: Type.INTEGER, description: "Logic score (0-20)." },
+              fluency: {
+                type: Type.INTEGER,
+                description: "Fluency score (0-20).",
+              },
+              creativity: {
+                type: Type.INTEGER,
+                description: "Creativity score (0-20).",
+              },
+            },
+            required: [
+              "clarity",
+              "vocabulary",
+              "grammar",
+              "logic",
+              "fluency",
+              "creativity",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description: "Role-specific feedback message.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "3-5 personalized improvement tips.",
+          },
+          // Legacy fields for backward compatibility
+          score: {
+            type: Type.INTEGER,
+            description: "Legacy overall score (same as overall_score).",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "What they did well.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "Areas for improvement.",
+          },
+          personalizedTip: {
+            type: Type.STRING,
+            description: "Personalized tip.",
+          },
+          spokenResponse: {
+            type: Type.STRING,
+            description: "Spoken response.",
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description: "Communication profile analysis - REQUIRED FIELD.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description:
+                  'Communication style profile (e.g., "Concise Communicator", "Detail-Oriented", "Storyteller").',
+              },
+              strength: {
+                type: Type.STRING,
+                description: "Primary communication strength.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "Main area for improvement.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description: "Example improvement - REQUIRED FIELD.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description: "The user's original explanation.",
+              },
+              improved: {
+                type: Type.STRING,
+                description: "An improved version of their explanation.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description: "Why the improved version is better.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "score",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "personalizedTip",
+          "spokenResponse",
+          "communicationBehavior",
+          "exampleRewrite",
+        ],
+      },
+    },
+  });
+
+  const result = JSON.parse(response.text);
+  console.log("✅ Generic evaluation generated");
+  return result;
 }
 
 /**
@@ -889,26 +1512,37 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
  * Returns structured response with agent information and natural conversation.
  */
 export async function getGroupDiscussionResponse(
-    ai: GoogleGenAI,
-    topic: string,
-    userContribution: string,
-    roundNumber: number,
-    isInitialResponse: boolean,
-    activeAgents: Array<{name: string, personality: string, description: string, avatar: string, color: string}>,
-    messageHistory?: Array<{type: string, content: string, agentName?: string, agentPersonality?: string}>
+  ai: GoogleGenAI,
+  topic: string,
+  userContribution: string,
+  roundNumber: number,
+  isInitialResponse: boolean,
+  activeAgents: Array<{
+    name: string;
+    personality: string;
+    description: string;
+    avatar: string;
+    color: string;
+  }>,
+  messageHistory?: Array<{
+    type: string;
+    content: string;
+    agentName?: string;
+    agentPersonality?: string;
+  }>,
 ): Promise<{ content: string; agentName: string; agentPersonality: string }> {
-    console.log('🎯 getGroupDiscussionResponse called with:', {
-        topic,
-        userContributionLength: userContribution.length,
-        roundNumber,
-        isInitialResponse,
-        activeAgentsCount: activeAgents.length
-    });
-    
-    if (isInitialResponse) {
-        // Initial response - one agent starts the discussion
-        const startingAgent = activeAgents[0];
-        const systemInstruction = `You are ${startingAgent.name}, a human participant in a group discussion. You have the personality of a "${startingAgent.personality}" - ${startingAgent.description}.
+  console.log("🎯 getGroupDiscussionResponse called with:", {
+    topic,
+    userContributionLength: userContribution.length,
+    roundNumber,
+    isInitialResponse,
+    activeAgentsCount: activeAgents.length,
+  });
+
+  if (isInitialResponse) {
+    // Initial response - one agent starts the discussion
+    const startingAgent = activeAgents[0];
+    const systemInstruction = `You are ${startingAgent.name}, a human participant in a group discussion. You have the personality of a "${startingAgent.personality}" - ${startingAgent.description}.
 
 **Discussion Topic:** ${topic}
 
@@ -931,43 +1565,49 @@ Start the group discussion naturally as a real person would. Be human, conversat
 **Output:**
 Just your natural opening contribution to start the discussion. Be human, not AI.`;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: systemInstruction,
-            config: {
-                temperature: 0.8, // Higher temperature for more natural, varied responses
-            }
-        });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: systemInstruction,
+      config: {
+        temperature: 0.8, // Higher temperature for more natural, varied responses
+      },
+    });
 
-        const content = response.text.trim();
-        console.log('✅ Initial group discussion response generated');
-        return { 
-            content, 
-            agentName: startingAgent.name, 
-            agentPersonality: startingAgent.personality 
-        };
-    } else {
-        // Response to user's contribution - another agent responds
-        const respondingAgent = activeAgents[roundNumber % activeAgents.length];
-        
-        // Format message history for context
-        const historyText = messageHistory ? messageHistory
-            .slice(-6) // Last 6 messages for context
-            .map(msg => `${msg.type === 'user' ? 'User' : msg.agentName}: ${msg.content}`)
-            .join('\n') : '';
+    const content = response.text.trim();
+    console.log("✅ Initial group discussion response generated");
+    return {
+      content,
+      agentName: startingAgent.name,
+      agentPersonality: startingAgent.personality,
+    };
+  } else {
+    // Response to user's contribution - another agent responds
+    const respondingAgent = activeAgents[roundNumber % activeAgents.length];
 
-        const systemInstruction = `You are ${respondingAgent.name}, a human participant in a group discussion. You have the personality of a "${respondingAgent.personality}" - ${respondingAgent.description}.
+    // Format message history for context
+    const historyText = messageHistory
+      ? messageHistory
+          .slice(-6) // Last 6 messages for context
+          .map(
+            (msg) =>
+              `${msg.type === "user" ? "User" : msg.agentName}: ${msg.content}`,
+          )
+          .join("\n")
+      : "";
+
+    const systemInstruction = `You are ${respondingAgent.name}, a human participant in a group discussion. You have the personality of a "${respondingAgent.personality}" - ${respondingAgent.description}.
 
 **Discussion Topic:** ${topic}
-${userContribution ? `**User's Latest Contribution:** ${userContribution}` : '**Context:** Continue the group discussion naturally'}
+${userContribution ? `**User's Latest Contribution:** ${userContribution}` : "**Context:** Continue the group discussion naturally"}
 
 **Recent Discussion Context:**
 ${historyText}
 
 **Your Task:**
-${userContribution ? 
-  'Respond naturally to the user\'s contribution as a real person would. Build on their ideas, challenge them respectfully, or add new perspectives.' :
-  'Continue the group discussion naturally. You can build on what others have said, introduce new ideas, ask questions, or challenge existing points. Be spontaneous and engaging.'
+${
+  userContribution
+    ? "Respond naturally to the user's contribution as a real person would. Build on their ideas, challenge them respectfully, or add new perspectives."
+    : "Continue the group discussion naturally. You can build on what others have said, introduce new ideas, ask questions, or challenge existing points. Be spontaneous and engaging."
 }
 
 **Human Discussion Style:**
@@ -990,22 +1630,22 @@ ${userContribution ?
 **Output:**
 Just your natural response to the discussion. Be human, not AI.`;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: systemInstruction,
-            config: {
-                temperature: 0.8, // Higher temperature for more natural, varied responses
-            }
-        });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: systemInstruction,
+      config: {
+        temperature: 0.8, // Higher temperature for more natural, varied responses
+      },
+    });
 
-        const content = response.text.trim();
-        console.log('✅ Group discussion response generated');
-        return { 
-            content, 
-            agentName: respondingAgent.name, 
-            agentPersonality: respondingAgent.personality 
-        };
-    }
+    const content = response.text.trim();
+    console.log("✅ Group discussion response generated");
+    return {
+      content,
+      agentName: respondingAgent.name,
+      agentPersonality: respondingAgent.personality,
+    };
+  }
 }
 
 /**
@@ -1013,31 +1653,31 @@ Just your natural response to the discussion. Be human, not AI.`;
  * Each message is evaluated independently to catch weak responses that get hidden in overall scoring.
  */
 export async function scoreIndividualDebateMessage(
-    ai: GoogleGenAI,
-    topic: string,
-    userMessage: string,
-    opponentMessage: string,
-    messageNumber: number
+  ai: GoogleGenAI,
+  topic: string,
+  userMessage: string,
+  opponentMessage: string,
+  messageNumber: number,
 ): Promise<{
-    messageNumber: number;
-    messageContent: string;
-    scores: {
-        logicReasoning: number;
-        evidenceQuality: number;
-        toneLanguage: number;
-        opponentEngagement: number;
-        argumentStructure: number;
-    };
-    overallPerformance: number;
-    critique: string;
+  messageNumber: number;
+  messageContent: string;
+  scores: {
+    logicReasoning: number;
+    evidenceQuality: number;
+    toneLanguage: number;
+    opponentEngagement: number;
+    argumentStructure: number;
+  };
+  overallPerformance: number;
+  critique: string;
 }> {
-    console.log('🎯 scoreIndividualDebateMessage called with:', {
-        topic,
-        userMessageLength: userMessage.length,
-        messageNumber
-    });
+  console.log("🎯 scoreIndividualDebateMessage called with:", {
+    topic,
+    userMessageLength: userMessage.length,
+    messageNumber,
+  });
 
-    const systemInstruction = `You are a BRUTALLY HONEST debate coach evaluating ONE individual message. You've seen thousands of debates and you're tired of inflated scores. Score this SINGLE response with REALISTIC standards.
+  const systemInstruction = `You are a BRUTALLY HONEST debate coach evaluating ONE individual message. You've seen thousands of debates and you're tired of inflated scores. Score this SINGLE response with REALISTIC standards.
 
 **DEBATE CONTEXT:**
 Topic: ${topic}
@@ -1150,7 +1790,7 @@ Evaluate the message's overall effectiveness as a debate response:
 
 **CRITICAL: GIVE DIFFERENT SCORES FOR EACH CATEGORY - NO SAME NUMBERS:**
 - Logic & Reasoning: Could be 8/20 (weak logic)
-- Evidence Quality: Could be 15/20 (strong evidence)  
+- Evidence Quality: Could be 15/20 (strong evidence)
 - Tone & Language: Could be 12/20 (decent tone)
 - Opponent Engagement: Could be 6/20 (poor engagement)
 - Argument Structure: Could be 10/20 (basic structure)
@@ -1252,89 +1892,150 @@ Evaluate the message's overall effectiveness as a debate response:
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            temperature: 0.2, // Lower temperature for consistent scoring
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    messageNumber: { type: Type.INTEGER, description: 'The message number being evaluated.' },
-                    messageContent: { type: Type.STRING, description: 'The exact message content.' },
-                    scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 5 categories (0-20 each).',
-                        properties: {
-                            logicReasoning: { type: Type.INTEGER, description: 'Logic & Reasoning score (0-20).' },
-                            evidenceQuality: { type: Type.INTEGER, description: 'Evidence Quality score (0-20).' },
-                            toneLanguage: { type: Type.INTEGER, description: 'Tone & Language score (0-20).' },
-                            opponentEngagement: { type: Type.INTEGER, description: 'Opponent Engagement score (0-20).' },
-                            argumentStructure: { type: Type.INTEGER, description: 'Argument Structure score (0-20).' }
-                        },
-                        required: ['logicReasoning', 'evidenceQuality', 'toneLanguage', 'opponentEngagement', 'argumentStructure']
-                    },
-                    overallPerformance: { type: Type.INTEGER, description: 'Overall performance score out of 100 for this individual message - separate from category scores.' },
-                    critique: { type: Type.STRING, description: 'BRIEF critique of this specific message - MAX 2 sentences.' }
-                },
-                required: ['messageNumber', 'messageContent', 'scores', 'overallPerformance', 'critique']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      temperature: 0.2, // Lower temperature for consistent scoring
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          messageNumber: {
+            type: Type.INTEGER,
+            description: "The message number being evaluated.",
+          },
+          messageContent: {
+            type: Type.STRING,
+            description: "The exact message content.",
+          },
+          scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 5 categories (0-20 each).",
+            properties: {
+              logicReasoning: {
+                type: Type.INTEGER,
+                description: "Logic & Reasoning score (0-20).",
+              },
+              evidenceQuality: {
+                type: Type.INTEGER,
+                description: "Evidence Quality score (0-20).",
+              },
+              toneLanguage: {
+                type: Type.INTEGER,
+                description: "Tone & Language score (0-20).",
+              },
+              opponentEngagement: {
+                type: Type.INTEGER,
+                description: "Opponent Engagement score (0-20).",
+              },
+              argumentStructure: {
+                type: Type.INTEGER,
+                description: "Argument Structure score (0-20).",
+              },
+            },
+            required: [
+              "logicReasoning",
+              "evidenceQuality",
+              "toneLanguage",
+              "opponentEngagement",
+              "argumentStructure",
+            ],
+          },
+          overallPerformance: {
+            type: Type.INTEGER,
+            description:
+              "Overall performance score out of 100 for this individual message - separate from category scores.",
+          },
+          critique: {
+            type: Type.STRING,
+            description:
+              "BRIEF critique of this specific message - MAX 2 sentences.",
+          },
+        },
+        required: [
+          "messageNumber",
+          "messageContent",
+          "scores",
+          "overallPerformance",
+          "critique",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Individual message scored:', result.overallPerformance);
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Individual message scored:", result.overallPerformance);
+  return result;
 }
 
 /**
  * Analyzes performance patterns across individual message scores.
  */
-function analyzePerformancePatterns(messageScores: Array<{messageNumber: number, overallPerformance: number}>): string {
-    if (messageScores.length === 0) return "No messages to analyze";
-    
-    const scores = messageScores.map(msg => msg.overallPerformance);
-    const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-    const minScore = Math.min(...scores);
-    const maxScore = Math.max(...scores);
-    const scoreRange = maxScore - minScore;
-    
-    // Detect patterns
-    const patterns = [];
-    
-    if (scoreRange > 30) {
-        patterns.push(`High variance: ${minScore}-${maxScore} range shows inconsistent performance`);
-    } else if (scoreRange < 10) {
-        patterns.push(`Consistent performance: ${minScore}-${maxScore} range shows stable quality`);
+function analyzePerformancePatterns(
+  messageScores: Array<{ messageNumber: number; overallPerformance: number }>,
+): string {
+  if (messageScores.length === 0) return "No messages to analyze";
+
+  const scores = messageScores.map((msg) => msg.overallPerformance);
+  const avgScore =
+    scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  const minScore = Math.min(...scores);
+  const maxScore = Math.max(...scores);
+  const scoreRange = maxScore - minScore;
+
+  // Detect patterns
+  const patterns = [];
+
+  if (scoreRange > 30) {
+    patterns.push(
+      `High variance: ${minScore}-${maxScore} range shows inconsistent performance`,
+    );
+  } else if (scoreRange < 10) {
+    patterns.push(
+      `Consistent performance: ${minScore}-${maxScore} range shows stable quality`,
+    );
+  }
+
+  if (scores[0] < avgScore - 10) {
+    patterns.push(
+      `Weak opener (${scores[0]}) but improves to avg ${Math.round(avgScore)}`,
+    );
+  } else if (scores[0] > avgScore + 10) {
+    patterns.push(
+      `Strong opener (${scores[0]}) but declines to avg ${Math.round(avgScore)}`,
+    );
+  }
+
+  if (scores.length > 2) {
+    const firstHalf = scores.slice(0, Math.floor(scores.length / 2));
+    const secondHalf = scores.slice(Math.floor(scores.length / 2));
+    const firstAvg =
+      firstHalf.reduce((sum, score) => sum + score, 0) / firstHalf.length;
+    const secondAvg =
+      secondHalf.reduce((sum, score) => sum + score, 0) / secondHalf.length;
+
+    if (secondAvg > firstAvg + 10) {
+      patterns.push(
+        `Improves over time: ${Math.round(firstAvg)} → ${Math.round(secondAvg)}`,
+      );
+    } else if (firstAvg > secondAvg + 10) {
+      patterns.push(
+        `Declines over time: ${Math.round(firstAvg)} → ${Math.round(secondAvg)}`,
+      );
     }
-    
-    if (scores[0] < avgScore - 10) {
-        patterns.push(`Weak opener (${scores[0]}) but improves to avg ${Math.round(avgScore)}`);
-    } else if (scores[0] > avgScore + 10) {
-        patterns.push(`Strong opener (${scores[0]}) but declines to avg ${Math.round(avgScore)}`);
-    }
-    
-    if (scores.length > 2) {
-        const firstHalf = scores.slice(0, Math.floor(scores.length / 2));
-        const secondHalf = scores.slice(Math.floor(scores.length / 2));
-        const firstAvg = firstHalf.reduce((sum, score) => sum + score, 0) / firstHalf.length;
-        const secondAvg = secondHalf.reduce((sum, score) => sum + score, 0) / secondHalf.length;
-        
-        if (secondAvg > firstAvg + 10) {
-            patterns.push(`Improves over time: ${Math.round(firstAvg)} → ${Math.round(secondAvg)}`);
-        } else if (firstAvg > secondAvg + 10) {
-            patterns.push(`Declines over time: ${Math.round(firstAvg)} → ${Math.round(secondAvg)}`);
-        }
-    }
-    
-    if (avgScore < 25) {
-        patterns.push(`Overall weak performance (avg ${Math.round(avgScore)})`);
-    } else if (avgScore > 60) {
-        patterns.push(`Strong overall performance (avg ${Math.round(avgScore)})`);
-    }
-    
-    return patterns.length > 0 ? patterns.join('; ') : `Average performance: ${Math.round(avgScore)}`;
+  }
+
+  if (avgScore < 25) {
+    patterns.push(`Overall weak performance (avg ${Math.round(avgScore)})`);
+  } else if (avgScore > 60) {
+    patterns.push(`Strong overall performance (avg ${Math.round(avgScore)})`);
+  }
+
+  return patterns.length > 0
+    ? patterns.join("; ")
+    : `Average performance: ${Math.round(avgScore)}`;
 }
 
 /**
@@ -1342,57 +2043,91 @@ function analyzePerformancePatterns(messageScores: Array<{messageNumber: number,
  * Each user message is scored individually, then averaged for realistic overall assessment.
  */
 export async function getEnhancedDebateEvaluation(
-    ai: GoogleGenAI,
-    debateTopic: string,
-    debateHistory: Array<{type: string, content: string, agentName?: string, agentPersonality?: string, timestamp: Date}>,
-    userParticipationCount: number
+  ai: GoogleGenAI,
+  debateTopic: string,
+  debateHistory: Array<{
+    type: string;
+    content: string;
+    agentName?: string;
+    agentPersonality?: string;
+    timestamp: Date;
+  }>,
+  userParticipationCount: number,
 ): Promise<any> {
-    console.log('🎯 getEnhancedDebateEvaluation called with:', {
-        debateTopic,
-        debateLength: debateHistory.length,
-        userParticipationCount
-    });
-    
-    // Extract user messages and their context
-    const userMessages = debateHistory.filter(msg => msg.type === 'user');
-    const messageScores = [];
-    
-    // Score each user message individually
-    for (let i = 0; i < userMessages.length; i++) {
-        const userMsg = userMessages[i];
-        const opponentMsg = i > 0 ? debateHistory[debateHistory.indexOf(userMsg) - 1]?.content || '' : '';
-        
-        const messageScore = await scoreIndividualDebateMessage(
-            ai,
-            debateTopic,
-            userMsg.content,
-            opponentMsg,
-            i + 1
-        );
-        messageScores.push(messageScore);
-    }
-    
-    // Calculate average scores across all messages for individual categories
-    const avgScores = {
-        logicReasoning: Math.round(messageScores.reduce((sum, msg) => sum + msg.scores.logicReasoning, 0) / messageScores.length),
-        evidenceQuality: Math.round(messageScores.reduce((sum, msg) => sum + msg.scores.evidenceQuality, 0) / messageScores.length),
-        toneLanguage: Math.round(messageScores.reduce((sum, msg) => sum + msg.scores.toneLanguage, 0) / messageScores.length),
-        opponentEngagement: Math.round(messageScores.reduce((sum, msg) => sum + msg.scores.opponentEngagement, 0) / messageScores.length),
-        argumentStructure: Math.round(messageScores.reduce((sum, msg) => sum + msg.scores.argumentStructure, 0) / messageScores.length)
-    };
-    
-    // Calculate overall performance score separately from category averages
-    const overallScore = Math.round(messageScores.reduce((sum, msg) => sum + msg.overallPerformance, 0) / messageScores.length);
-    
-    // Analyze performance patterns
-    const performancePatterns = analyzePerformancePatterns(messageScores);
-    
-    // Format debate history for context
-    const debateText = debateHistory
-        .map(msg => `${msg.type === 'user' ? 'USER' : 'AI_OPPONENT'}: ${msg.content}`)
-        .join('\n\n');
+  console.log("🎯 getEnhancedDebateEvaluation called with:", {
+    debateTopic,
+    debateLength: debateHistory.length,
+    userParticipationCount,
+  });
 
-    const systemInstruction = `You are a BRUTALLY HONEST debate coach analyzing per-message performance. Each user message has been scored individually with realistic standards. Now provide overall analysis and patterns.
+  // Extract user messages and their context
+  const userMessages = debateHistory.filter((msg) => msg.type === "user");
+  const messageScores = [];
+
+  // Score each user message individually
+  for (let i = 0; i < userMessages.length; i++) {
+    const userMsg = userMessages[i];
+    const opponentMsg =
+      i > 0
+        ? debateHistory[debateHistory.indexOf(userMsg) - 1]?.content || ""
+        : "";
+
+    const messageScore = await scoreIndividualDebateMessage(
+      ai,
+      debateTopic,
+      userMsg.content,
+      opponentMsg,
+      i + 1,
+    );
+    messageScores.push(messageScore);
+  }
+
+  // Calculate average scores across all messages for individual categories
+  const avgScores = {
+    logicReasoning: Math.round(
+      messageScores.reduce((sum, msg) => sum + msg.scores.logicReasoning, 0) /
+        messageScores.length,
+    ),
+    evidenceQuality: Math.round(
+      messageScores.reduce((sum, msg) => sum + msg.scores.evidenceQuality, 0) /
+        messageScores.length,
+    ),
+    toneLanguage: Math.round(
+      messageScores.reduce((sum, msg) => sum + msg.scores.toneLanguage, 0) /
+        messageScores.length,
+    ),
+    opponentEngagement: Math.round(
+      messageScores.reduce(
+        (sum, msg) => sum + msg.scores.opponentEngagement,
+        0,
+      ) / messageScores.length,
+    ),
+    argumentStructure: Math.round(
+      messageScores.reduce(
+        (sum, msg) => sum + msg.scores.argumentStructure,
+        0,
+      ) / messageScores.length,
+    ),
+  };
+
+  // Calculate overall performance score separately from category averages
+  const overallScore = Math.round(
+    messageScores.reduce((sum, msg) => sum + msg.overallPerformance, 0) /
+      messageScores.length,
+  );
+
+  // Analyze performance patterns
+  const performancePatterns = analyzePerformancePatterns(messageScores);
+
+  // Format debate history for context
+  const debateText = debateHistory
+    .map(
+      (msg) =>
+        `${msg.type === "user" ? "USER" : "AI_OPPONENT"}: ${msg.content}`,
+    )
+    .join("\n\n");
+
+  const systemInstruction = `You are a BRUTALLY HONEST debate coach analyzing per-message performance. Each user message has been scored individually with realistic standards. Now provide overall analysis and patterns.
 
 **DEBATE CONTEXT:**
 Topic: ${debateTopic}
@@ -1400,7 +2135,7 @@ User Participation Count: ${userParticipationCount}
 Overall Score: ${overallScore}/100
 
 **PER-MESSAGE SCORING RESULTS:**
-${messageScores.map(msg => `Message ${msg.messageNumber}: "${msg.messageContent}" - Overall Performance: ${msg.overallPerformance}/100`).join('\n')}
+${messageScores.map((msg) => `Message ${msg.messageNumber}: "${msg.messageContent}" - Overall Performance: ${msg.overallPerformance}/100`).join("\n")}
 
 **ANALYZE THEIR ACTUAL PERFORMANCE - NO EXAMPLES TO COPY:**
 - Read their actual messages and analyze the quality
@@ -1529,148 +2264,380 @@ ${performancePatterns}
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Enhanced Debate Evaluation).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall debate score out of 100 based on world-class standards.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 5 categories (0-20 each).',
-                        properties: {
-                            logicReasoning: { type: Type.INTEGER, description: 'Logic & Reasoning score (0-20).' },
-                            evidenceQuality: { type: Type.INTEGER, description: 'Evidence Quality score (0-20).' },
-                            toneLanguage: { type: Type.INTEGER, description: 'Tone & Language score (0-20).' },
-                            opponentEngagement: { type: Type.INTEGER, description: 'Opponent Engagement score (0-20).' },
-                            argumentStructure: { type: Type.INTEGER, description: 'Argument Structure score (0-20).' }
-                        },
-                        required: ['logicReasoning', 'evidenceQuality', 'toneLanguage', 'opponentEngagement', 'argumentStructure']
-                    },
-                    messageBreakdown: {
-                        type: Type.ARRAY,
-                        description: 'Per-message scoring breakdown showing individual response analysis.',
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                messageNumber: { type: Type.INTEGER, description: 'Message number in the debate.' },
-                                messageContent: { type: Type.STRING, description: 'The exact message content.' },
-                                scores: {
-                                    type: Type.OBJECT,
-                                    description: 'Individual scores for this message (0-20 each).',
-                                    properties: {
-                                        logicReasoning: { type: Type.INTEGER, description: 'Logic & Reasoning score (0-20).' },
-                                        evidenceQuality: { type: Type.INTEGER, description: 'Evidence Quality score (0-20).' },
-                                        toneLanguage: { type: Type.INTEGER, description: 'Tone & Language score (0-20).' },
-                                        opponentEngagement: { type: Type.INTEGER, description: 'Opponent Engagement score (0-20).' },
-                                        argumentStructure: { type: Type.INTEGER, description: 'Argument Structure score (0-20).' }
-                                    },
-                                    required: ['logicReasoning', 'evidenceQuality', 'toneLanguage', 'opponentEngagement', 'argumentStructure']
-                                },
-                                totalScore: { type: Type.INTEGER, description: 'Total score for this individual message (0-100).' },
-                                critique: { type: Type.STRING, description: 'Brief critique of this specific message.' }
-                            },
-                            required: ['messageNumber', 'messageContent', 'scores', 'totalScore', 'critique']
-                        }
-                    },
-                    feedback: { type: Type.STRING, description: 'BRIEF feedback analyzing debate performance - MAX 2 sentences.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '3-5 SHORT improvement tips - each tip MAX 1 sentence.' 
-                    },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'BRIEF strengths - MAX 1 sentence.' },
-                    areasForImprovement: { type: Type.STRING, description: 'BRIEF improvement areas - MAX 1 sentence.' },
-                    personalizedTip: { type: Type.STRING, description: 'SHORT personalized tip - MAX 1 sentence.' },
-                    spokenResponse: { type: Type.STRING, description: 'BRIEF spoken summary - MAX 1 sentence.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Communication profile analysis based on debate performance.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'BRIEF debate profile - MAX 3 words.' },
-                            strength: { type: Type.STRING, description: 'BRIEF key strength - MAX 1 sentence.' },
-                            growthArea: { type: Type.STRING, description: 'BRIEF growth area - MAX 1 sentence.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    debateAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed analysis of the debate performance against world-class standards.",
-                        properties: {
-                            strongestArgument: { type: Type.STRING, description: "BRIEF strongest argument - MAX 1 sentence." },
-                            weakestArgument: { type: Type.STRING, description: "BRIEF weakest argument - MAX 1 sentence." },
-                            bestRebuttal: { type: Type.STRING, description: "BRIEF best rebuttal - MAX 1 sentence." },
-                            missedOpportunities: { type: Type.STRING, description: "BRIEF missed opportunities - MAX 1 sentence." },
-                            improvementOverTime: { type: Type.STRING, description: "BRIEF improvement over time - MAX 1 sentence." },
-                            logicalConsistency: { type: Type.STRING, description: "BRIEF logical consistency - MAX 1 sentence." },
-                            evidenceEffectiveness: { type: Type.STRING, description: "BRIEF evidence effectiveness - MAX 1 sentence." },
-                            rhetoricalSophistication: { type: Type.STRING, description: "BRIEF rhetorical sophistication - MAX 1 sentence." },
-                            logicalFallacies: { type: Type.STRING, description: "BRIEF logical fallacies - MAX 1 sentence." },
-                            argumentativePatterns: { type: Type.STRING, description: "BRIEF argumentative patterns - MAX 1 sentence." },
-                            emotionalIntelligence: { type: Type.STRING, description: "BRIEF emotional intelligence - MAX 1 sentence." },
-                            crossExaminationSkills: { type: Type.STRING, description: "BRIEF cross-examination skills - MAX 1 sentence." },
-                            argumentativeStamina: { type: Type.STRING, description: "BRIEF argumentative stamina - MAX 1 sentence." },
-                            timeManagement: { type: Type.STRING, description: "BRIEF time management - MAX 1 sentence." },
-                            adaptability: { type: Type.STRING, description: "BRIEF adaptability - MAX 1 sentence." },
-                            closingImpact: { type: Type.STRING, description: "BRIEF closing impact - MAX 1 sentence." }
-                        },
-                        required: ['strongestArgument', 'weakestArgument', 'bestRebuttal', 'missedOpportunities', 'improvementOverTime', 'logicalConsistency', 'evidenceEffectiveness', 'rhetoricalSophistication', 'logicalFallacies', 'argumentativePatterns', 'emotionalIntelligence', 'crossExaminationSkills', 'argumentativeStamina', 'timeManagement', 'adaptability', 'closingImpact']
-                    },
-                    worldClassComparison: {
-                        type: Type.OBJECT,
-                        description: "Comparison to world-class debate standards and recommendations.",
-                        properties: {
-                            currentLevel: { type: Type.STRING, description: "BRIEF skill level - MAX 1 sentence." },
-                            championshipGap: { type: Type.STRING, description: "BRIEF championship gap - MAX 1 sentence." },
-                            nextMilestone: { type: Type.STRING, description: "BRIEF next milestone - MAX 1 sentence." },
-                            trainingFocus: { type: Type.STRING, description: "BRIEF training focus - MAX 1 sentence." }
-                        },
-                        required: ['currentLevel', 'championshipGap', 'nextMilestone', 'trainingFocus']
-                    },
-                    performanceInsights: {
-                        type: Type.OBJECT,
-                        description: "Advanced performance insights and strategic analysis.",
-                        properties: {
-                            debateStyle: { type: Type.STRING, description: "BRIEF debate style - MAX 1 sentence." },
-                            strengthAreas: { 
-                                type: Type.ARRAY, 
-                                items: { type: Type.STRING },
-                                description: "3 SHORT strength areas - each MAX 3 words." 
-                            },
-                            improvementAreas: { 
-                                type: Type.ARRAY, 
-                                items: { type: Type.STRING },
-                                description: "3 SHORT improvement areas - each MAX 3 words." 
-                            },
-                            strategicMoves: { type: Type.STRING, description: "BRIEF strategic moves - MAX 1 sentence." },
-                            tacticalErrors: { type: Type.STRING, description: "BRIEF tactical errors - MAX 1 sentence." },
-                            opponentExploitation: { type: Type.STRING, description: "BRIEF opponent exploitation - MAX 1 sentence." },
-                            pressureHandling: { type: Type.STRING, description: "BRIEF pressure handling - MAX 1 sentence." },
-                            comebackAbility: { type: Type.STRING, description: "BRIEF comeback ability - MAX 1 sentence." }
-                        },
-                        required: ['debateStyle', 'strengthAreas', 'improvementAreas', 'strategicMoves', 'tacticalErrors', 'opponentExploitation', 'pressureHandling', 'comebackAbility']
-                    }
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description: "The coaching role used (Enhanced Debate Evaluation).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description:
+              "Overall debate score out of 100 based on world-class standards.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 5 categories (0-20 each).",
+            properties: {
+              logicReasoning: {
+                type: Type.INTEGER,
+                description: "Logic & Reasoning score (0-20).",
+              },
+              evidenceQuality: {
+                type: Type.INTEGER,
+                description: "Evidence Quality score (0-20).",
+              },
+              toneLanguage: {
+                type: Type.INTEGER,
+                description: "Tone & Language score (0-20).",
+              },
+              opponentEngagement: {
+                type: Type.INTEGER,
+                description: "Opponent Engagement score (0-20).",
+              },
+              argumentStructure: {
+                type: Type.INTEGER,
+                description: "Argument Structure score (0-20).",
+              },
+            },
+            required: [
+              "logicReasoning",
+              "evidenceQuality",
+              "toneLanguage",
+              "opponentEngagement",
+              "argumentStructure",
+            ],
+          },
+          messageBreakdown: {
+            type: Type.ARRAY,
+            description:
+              "Per-message scoring breakdown showing individual response analysis.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                messageNumber: {
+                  type: Type.INTEGER,
+                  description: "Message number in the debate.",
                 },
-                required: ['role', 'overall_score', 'category_scores', 'messageBreakdown', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'debateAnalysis', 'worldClassComparison', 'performanceInsights']
-            }
-        }
-    });
+                messageContent: {
+                  type: Type.STRING,
+                  description: "The exact message content.",
+                },
+                scores: {
+                  type: Type.OBJECT,
+                  description:
+                    "Individual scores for this message (0-20 each).",
+                  properties: {
+                    logicReasoning: {
+                      type: Type.INTEGER,
+                      description: "Logic & Reasoning score (0-20).",
+                    },
+                    evidenceQuality: {
+                      type: Type.INTEGER,
+                      description: "Evidence Quality score (0-20).",
+                    },
+                    toneLanguage: {
+                      type: Type.INTEGER,
+                      description: "Tone & Language score (0-20).",
+                    },
+                    opponentEngagement: {
+                      type: Type.INTEGER,
+                      description: "Opponent Engagement score (0-20).",
+                    },
+                    argumentStructure: {
+                      type: Type.INTEGER,
+                      description: "Argument Structure score (0-20).",
+                    },
+                  },
+                  required: [
+                    "logicReasoning",
+                    "evidenceQuality",
+                    "toneLanguage",
+                    "opponentEngagement",
+                    "argumentStructure",
+                  ],
+                },
+                totalScore: {
+                  type: Type.INTEGER,
+                  description:
+                    "Total score for this individual message (0-100).",
+                },
+                critique: {
+                  type: Type.STRING,
+                  description: "Brief critique of this specific message.",
+                },
+              },
+              required: [
+                "messageNumber",
+                "messageContent",
+                "scores",
+                "totalScore",
+                "critique",
+              ],
+            },
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "BRIEF feedback analyzing debate performance - MAX 2 sentences.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description:
+              "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
+          },
+          // Legacy fields for backward compatibility
+          score: {
+            type: Type.INTEGER,
+            description: "Legacy overall score (same as overall_score).",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "BRIEF strengths - MAX 1 sentence.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "BRIEF improvement areas - MAX 1 sentence.",
+          },
+          personalizedTip: {
+            type: Type.STRING,
+            description: "SHORT personalized tip - MAX 1 sentence.",
+          },
+          spokenResponse: {
+            type: Type.STRING,
+            description: "BRIEF spoken summary - MAX 1 sentence.",
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description:
+              "Communication profile analysis based on debate performance.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "BRIEF debate profile - MAX 3 words.",
+              },
+              strength: {
+                type: Type.STRING,
+                description: "BRIEF key strength - MAX 1 sentence.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "BRIEF growth area - MAX 1 sentence.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          debateAnalysis: {
+            type: Type.OBJECT,
+            description:
+              "Detailed analysis of the debate performance against world-class standards.",
+            properties: {
+              strongestArgument: {
+                type: Type.STRING,
+                description: "BRIEF strongest argument - MAX 1 sentence.",
+              },
+              weakestArgument: {
+                type: Type.STRING,
+                description: "BRIEF weakest argument - MAX 1 sentence.",
+              },
+              bestRebuttal: {
+                type: Type.STRING,
+                description: "BRIEF best rebuttal - MAX 1 sentence.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description: "BRIEF missed opportunities - MAX 1 sentence.",
+              },
+              improvementOverTime: {
+                type: Type.STRING,
+                description: "BRIEF improvement over time - MAX 1 sentence.",
+              },
+              logicalConsistency: {
+                type: Type.STRING,
+                description: "BRIEF logical consistency - MAX 1 sentence.",
+              },
+              evidenceEffectiveness: {
+                type: Type.STRING,
+                description: "BRIEF evidence effectiveness - MAX 1 sentence.",
+              },
+              rhetoricalSophistication: {
+                type: Type.STRING,
+                description:
+                  "BRIEF rhetorical sophistication - MAX 1 sentence.",
+              },
+              logicalFallacies: {
+                type: Type.STRING,
+                description: "BRIEF logical fallacies - MAX 1 sentence.",
+              },
+              argumentativePatterns: {
+                type: Type.STRING,
+                description: "BRIEF argumentative patterns - MAX 1 sentence.",
+              },
+              emotionalIntelligence: {
+                type: Type.STRING,
+                description: "BRIEF emotional intelligence - MAX 1 sentence.",
+              },
+              crossExaminationSkills: {
+                type: Type.STRING,
+                description: "BRIEF cross-examination skills - MAX 1 sentence.",
+              },
+              argumentativeStamina: {
+                type: Type.STRING,
+                description: "BRIEF argumentative stamina - MAX 1 sentence.",
+              },
+              timeManagement: {
+                type: Type.STRING,
+                description: "BRIEF time management - MAX 1 sentence.",
+              },
+              adaptability: {
+                type: Type.STRING,
+                description: "BRIEF adaptability - MAX 1 sentence.",
+              },
+              closingImpact: {
+                type: Type.STRING,
+                description: "BRIEF closing impact - MAX 1 sentence.",
+              },
+            },
+            required: [
+              "strongestArgument",
+              "weakestArgument",
+              "bestRebuttal",
+              "missedOpportunities",
+              "improvementOverTime",
+              "logicalConsistency",
+              "evidenceEffectiveness",
+              "rhetoricalSophistication",
+              "logicalFallacies",
+              "argumentativePatterns",
+              "emotionalIntelligence",
+              "crossExaminationSkills",
+              "argumentativeStamina",
+              "timeManagement",
+              "adaptability",
+              "closingImpact",
+            ],
+          },
+          worldClassComparison: {
+            type: Type.OBJECT,
+            description:
+              "Comparison to world-class debate standards and recommendations.",
+            properties: {
+              currentLevel: {
+                type: Type.STRING,
+                description: "BRIEF skill level - MAX 1 sentence.",
+              },
+              championshipGap: {
+                type: Type.STRING,
+                description: "BRIEF championship gap - MAX 1 sentence.",
+              },
+              nextMilestone: {
+                type: Type.STRING,
+                description: "BRIEF next milestone - MAX 1 sentence.",
+              },
+              trainingFocus: {
+                type: Type.STRING,
+                description: "BRIEF training focus - MAX 1 sentence.",
+              },
+            },
+            required: [
+              "currentLevel",
+              "championshipGap",
+              "nextMilestone",
+              "trainingFocus",
+            ],
+          },
+          performanceInsights: {
+            type: Type.OBJECT,
+            description:
+              "Advanced performance insights and strategic analysis.",
+            properties: {
+              debateStyle: {
+                type: Type.STRING,
+                description: "BRIEF debate style - MAX 1 sentence.",
+              },
+              strengthAreas: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "3 SHORT strength areas - each MAX 3 words.",
+              },
+              improvementAreas: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "3 SHORT improvement areas - each MAX 3 words.",
+              },
+              strategicMoves: {
+                type: Type.STRING,
+                description: "BRIEF strategic moves - MAX 1 sentence.",
+              },
+              tacticalErrors: {
+                type: Type.STRING,
+                description: "BRIEF tactical errors - MAX 1 sentence.",
+              },
+              opponentExploitation: {
+                type: Type.STRING,
+                description: "BRIEF opponent exploitation - MAX 1 sentence.",
+              },
+              pressureHandling: {
+                type: Type.STRING,
+                description: "BRIEF pressure handling - MAX 1 sentence.",
+              },
+              comebackAbility: {
+                type: Type.STRING,
+                description: "BRIEF comeback ability - MAX 1 sentence.",
+              },
+            },
+            required: [
+              "debateStyle",
+              "strengthAreas",
+              "improvementAreas",
+              "strategicMoves",
+              "tacticalErrors",
+              "opponentExploitation",
+              "pressureHandling",
+              "comebackAbility",
+            ],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "messageBreakdown",
+          "feedback",
+          "tips",
+          "score",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "personalizedTip",
+          "spokenResponse",
+          "communicationBehavior",
+          "debateAnalysis",
+          "worldClassComparison",
+          "performanceInsights",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    
-    // Add the calculated scores and message breakdown to the result
-    result.overall_score = overallScore;
-    result.category_scores = avgScores;
-    result.messageBreakdown = messageScores;
-    
-    console.log('✅ Enhanced debate evaluation generated with per-message scoring');
-    return result;
+  const result = JSON.parse(response.text);
+
+  // Add the calculated scores and message breakdown to the result
+  result.overall_score = overallScore;
+  result.category_scores = avgScores;
+  result.messageBreakdown = messageScores;
+
+  console.log(
+    "✅ Enhanced debate evaluation generated with per-message scoring",
+  );
+  return result;
 }
 
 /**
@@ -1678,29 +2645,46 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
  * Returns structured feedback on group discussion skills with accurate, meaningful scoring.
  */
 export async function getGroupDiscussionEvaluation(
-    ai: GoogleGenAI,
-    discussionTopic: string,
-    discussionHistory: Array<{type: string, content: string, agentName?: string, agentPersonality?: string, timestamp: Date}>,
-    activeAgents: Array<{name: string, personality: string, description: string, avatar: string, color: string}>,
-    userParticipationCount: number
+  ai: GoogleGenAI,
+  discussionTopic: string,
+  discussionHistory: Array<{
+    type: string;
+    content: string;
+    agentName?: string;
+    agentPersonality?: string;
+    timestamp: Date;
+  }>,
+  activeAgents: Array<{
+    name: string;
+    personality: string;
+    description: string;
+    avatar: string;
+    color: string;
+  }>,
+  userParticipationCount: number,
 ): Promise<any> {
-    console.log('🎯 getGroupDiscussionEvaluation called with:', {
-        discussionTopic,
-        discussionLength: discussionHistory.length,
-        activeAgentsCount: activeAgents.length,
-        userParticipationCount
-    });
-    
-    // Format discussion history for analysis
-    const discussionText = discussionHistory
-        .map(msg => `${msg.type === 'user' ? 'USER' : msg.agentName} (${msg.agentPersonality || 'Agent'}): ${msg.content}`)
-        .join('\n\n');
+  console.log("🎯 getGroupDiscussionEvaluation called with:", {
+    discussionTopic,
+    discussionLength: discussionHistory.length,
+    activeAgentsCount: activeAgents.length,
+    userParticipationCount,
+  });
 
-    const agentsText = activeAgents
-        .map(agent => `${agent.name} (${agent.personality}): ${agent.description}`)
-        .join('\n');
+  // Format discussion history for analysis
+  const discussionText = discussionHistory
+    .map(
+      (msg) =>
+        `${msg.type === "user" ? "USER" : msg.agentName} (${msg.agentPersonality || "Agent"}): ${msg.content}`,
+    )
+    .join("\n\n");
 
-    const systemInstruction = `You are an elite group discussion facilitator and communication expert with 20+ years of experience evaluating group dynamics and individual participation. You will analyze the ENTIRE group discussion and provide brutally accurate, meaningful scoring that reflects real group discussion performance.
+  const agentsText = activeAgents
+    .map(
+      (agent) => `${agent.name} (${agent.personality}): ${agent.description}`,
+    )
+    .join("\n");
+
+  const systemInstruction = `You are an elite group discussion facilitator and communication expert with 20+ years of experience evaluating group dynamics and individual participation. You will analyze the ENTIRE group discussion and provide brutally accurate, meaningful scoring that reflects real group discussion performance.
 
 **DISCUSSION CONTEXT:**
 Topic: ${discussionTopic}
@@ -1769,82 +2753,198 @@ ${discussionText}
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Group Discussion).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall group discussion score out of 100 based on comprehensive analysis.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 categories (0-20 each).',
-                        properties: {
-                            participation: { type: Type.INTEGER, description: 'Participation & Engagement score (0-20).' },
-                            communication: { type: Type.INTEGER, description: 'Communication Clarity score (0-20).' },
-                            leadership: { type: Type.INTEGER, description: 'Leadership & Initiative score (0-20).' },
-                            listening: { type: Type.INTEGER, description: 'Active Listening score (0-20).' },
-                            collaboration: { type: Type.INTEGER, description: 'Collaboration Skills score (0-20).' },
-                            criticalThinking: { type: Type.INTEGER, description: 'Critical Thinking score (0-20).' }
-                        },
-                        required: ['participation', 'communication', 'leadership', 'listening', 'collaboration', 'criticalThinking']
-                    },
-                    feedback: { type: Type.STRING, description: 'Comprehensive feedback analyzing the entire group discussion performance with specific examples.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '5-7 specific improvement tips based on actual performance in the group discussion.' 
-                    },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'Specific strengths demonstrated in the group discussion with examples.' },
-                    areasForImprovement: { type: Type.STRING, description: 'Specific areas that need improvement with examples from the discussion.' },
-                    personalizedTip: { type: Type.STRING, description: 'SHORT personalized tip - MAX 1 sentence.' },
-                    spokenResponse: { type: Type.STRING, description: 'BRIEF spoken summary - MAX 1 sentence.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Communication profile analysis based on group discussion performance.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'Group discussion style profile (2-4 words).' },
-                            strength: { type: Type.STRING, description: 'Key strength demonstrated in the group discussion.' },
-                            growthArea: { type: Type.STRING, description: 'BRIEF growth area - MAX 1 sentence.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example improvement of a specific contribution from the discussion.",
-                        properties: {
-                            original: { type: Type.STRING, description: "Original contribution from the discussion." },
-                            improved: { type: Type.STRING, description: "Improved version of the contribution." },
-                            reasoning: { type: Type.STRING, description: "Reasoning for the improvement." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    },
-                    groupDiscussionAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed analysis of the group discussion performance.",
-                        properties: {
-                            strongestContribution: { type: Type.STRING, description: "The user's strongest contribution to the discussion." },
-                            weakestContribution: { type: Type.STRING, description: "The user's weakest contribution to the discussion." },
-                            bestInteraction: { type: Type.STRING, description: "The user's best interaction with other participants." },
-                            missedOpportunities: { type: Type.STRING, description: "Key opportunities the user missed in the discussion." },
-                            groupDynamics: { type: Type.STRING, description: "How the user affected overall group dynamics." }
-                        },
-                        required: ['strongestContribution', 'weakestContribution', 'bestInteraction', 'missedOpportunities', 'groupDynamics']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'exampleRewrite', 'groupDiscussionAnalysis']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description: "The coaching role used (Group Discussion).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description:
+              "Overall group discussion score out of 100 based on comprehensive analysis.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 categories (0-20 each).",
+            properties: {
+              participation: {
+                type: Type.INTEGER,
+                description: "Participation & Engagement score (0-20).",
+              },
+              communication: {
+                type: Type.INTEGER,
+                description: "Communication Clarity score (0-20).",
+              },
+              leadership: {
+                type: Type.INTEGER,
+                description: "Leadership & Initiative score (0-20).",
+              },
+              listening: {
+                type: Type.INTEGER,
+                description: "Active Listening score (0-20).",
+              },
+              collaboration: {
+                type: Type.INTEGER,
+                description: "Collaboration Skills score (0-20).",
+              },
+              criticalThinking: {
+                type: Type.INTEGER,
+                description: "Critical Thinking score (0-20).",
+              },
+            },
+            required: [
+              "participation",
+              "communication",
+              "leadership",
+              "listening",
+              "collaboration",
+              "criticalThinking",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "Comprehensive feedback analyzing the entire group discussion performance with specific examples.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description:
+              "5-7 specific improvement tips based on actual performance in the group discussion.",
+          },
+          // Legacy fields for backward compatibility
+          score: {
+            type: Type.INTEGER,
+            description: "Legacy overall score (same as overall_score).",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description:
+              "Specific strengths demonstrated in the group discussion with examples.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description:
+              "Specific areas that need improvement with examples from the discussion.",
+          },
+          personalizedTip: {
+            type: Type.STRING,
+            description: "SHORT personalized tip - MAX 1 sentence.",
+          },
+          spokenResponse: {
+            type: Type.STRING,
+            description: "BRIEF spoken summary - MAX 1 sentence.",
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description:
+              "Communication profile analysis based on group discussion performance.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "Group discussion style profile (2-4 words).",
+              },
+              strength: {
+                type: Type.STRING,
+                description:
+                  "Key strength demonstrated in the group discussion.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "BRIEF growth area - MAX 1 sentence.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description:
+              "Example improvement of a specific contribution from the discussion.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description: "Original contribution from the discussion.",
+              },
+              improved: {
+                type: Type.STRING,
+                description: "Improved version of the contribution.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description: "Reasoning for the improvement.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+          groupDiscussionAnalysis: {
+            type: Type.OBJECT,
+            description:
+              "Detailed analysis of the group discussion performance.",
+            properties: {
+              strongestContribution: {
+                type: Type.STRING,
+                description:
+                  "The user's strongest contribution to the discussion.",
+              },
+              weakestContribution: {
+                type: Type.STRING,
+                description:
+                  "The user's weakest contribution to the discussion.",
+              },
+              bestInteraction: {
+                type: Type.STRING,
+                description:
+                  "The user's best interaction with other participants.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description:
+                  "Key opportunities the user missed in the discussion.",
+              },
+              groupDynamics: {
+                type: Type.STRING,
+                description: "How the user affected overall group dynamics.",
+              },
+            },
+            required: [
+              "strongestContribution",
+              "weakestContribution",
+              "bestInteraction",
+              "missedOpportunities",
+              "groupDynamics",
+            ],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "score",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "personalizedTip",
+          "spokenResponse",
+          "communicationBehavior",
+          "exampleRewrite",
+          "groupDiscussionAnalysis",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Comprehensive group discussion evaluation generated');
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Comprehensive group discussion evaluation generated");
+  return result;
 }
 
 /**
@@ -1852,74 +2952,134 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
  * Returns structured feedback with role-based personalities and 6-category scoring.
  */
 export async function getCoachingFeedback(
-    ai: GoogleGenAI,
-    aiCaption: string,
-    userExplanation: string,
-    mode: CoachMode,
-    strategy: string | null
+  ai: GoogleGenAI,
+  aiCaption: string,
+  userExplanation: string,
+  mode: CoachMode,
+  strategy: string | null,
 ): Promise<Feedback> {
-    console.log('🎯 getCoachingFeedback called with:', {
-        mode,
-        strategyLength: strategy?.length || 0,
-        aiCaptionLength: aiCaption.length,
-        userExplanationLength: userExplanation.length
-    });
-    const strategyInstruction = strategy
-      ? `**User's Strategic Goal:**
+  console.log("🎯 getCoachingFeedback called with:", {
+    hasAi: !!ai,
+    aiType: typeof ai,
+    mode,
+    strategyLength: strategy?.length || 0,
+    aiCaptionLength: aiCaption.length,
+    userExplanationLength: userExplanation.length,
+  });
+
+  if (!ai) {
+    throw new Error(
+      "AI client is not initialized. Please check your API key in .env file.",
+    );
+  }
+  const strategyInstruction = strategy
+    ? `**User's Strategic Goal:**
     The user was given the following strategy to guide their explanation: "${strategy}".
     In your evaluation, pay special attention to how well they executed this specific strategy. Was their attempt successful, clumsy, or did they ignore it completely? Weave this observation directly into your analysis and scoring.`
-      : '';
-    
-    const rolePersonalities = {
-        [CoachMode.Teacher]: {
-            tone: "structured, constructive, supportive",
-            approach: "methodical analysis with clear learning objectives",
-            style: "patient, encouraging, educational"
-        },
-        [CoachMode.Debater]: {
-            tone: "analytical, challenging, logical",
-            approach: "critical thinking with pointed questions",
-            style: "sharp, questioning, intellectually rigorous"
-        },
-        [CoachMode.Storyteller]: {
-            tone: "creative, expressive, narrative-driven",
-            approach: "imaginative analysis focusing on storytelling elements",
-            style: "artistic, inspiring, metaphor-rich"
-        }
-    };
+    : "";
 
-    const personality = rolePersonalities[mode];
+  const rolePersonalities = {
+    [CoachMode.Teacher]: {
+      tone: "structured, constructive, supportive",
+      approach: "methodical analysis with clear learning objectives",
+      style: "patient, encouraging, educational",
+    },
+    [CoachMode.Debater]: {
+      tone: "analytical, challenging, logical",
+      approach: "critical thinking with pointed questions",
+      style: "sharp, questioning, intellectually rigorous",
+    },
+    [CoachMode.Storyteller]: {
+      tone: "creative, expressive, narrative-driven",
+      approach: "imaginative analysis focusing on storytelling elements",
+      style: "artistic, inspiring, metaphor-rich",
+    },
+  };
 
-    const systemInstruction = `You are a HARSH, REALISTIC communication coach who evaluates image description skills with brutal accuracy. You are NOT encouraging - you are brutally honest about actual performance.
+  const personality = rolePersonalities[mode];
 
-**CRITICAL SCORING RULES:**
-- A 2-word response gets 0-5 points MAX
-- A 1-sentence response gets 5-15 points MAX  
-- Only detailed, comprehensive descriptions get 70+ points
-- Be RUTHLESS with scoring - most people are terrible at describing images
+  const systemInstruction = `You are a HARSH, REALISTIC communication coach who evaluates image description skills with brutal accuracy. You are NOT encouraging - you are brutally honest about actual performance.
+
+**EVALUATION METHODOLOGY - ANALYZE ACTUAL PERFORMANCE:**
+
+**STEP 1: ANALYZE THE USER'S ACTUAL RESPONSE**
+- Count the actual words and sentences
+- Assess the actual detail level provided
+- Evaluate the actual accuracy against the image
+- Check the actual structure and organization
+- Examine the actual vocabulary used
+- Determine the actual completeness of description
+
+**STEP 2: COMPARE AGAINST THE AI CAPTION**
+- The AI caption shows what a GOOD description looks like
+- Compare the user's response to this standard
+- Identify what they missed, got wrong, or did poorly
+- Note what they did well (if anything)
+
+**STEP 3: SCORE BASED ON ACTUAL ANALYSIS**
+- Don't use predetermined ranges
+- Score based on what they ACTUALLY provided
+- If they said "buildings" and the image shows a complex cityscape with specific architectural details, that's terrible performance
+- If they described specific elements accurately, give credit for that
+- If they missed major elements, deduct accordingly
+
+**SCORING PRINCIPLES:**
+- 0-20 per category based on ACTUAL performance
+- Overall score = sum of all categories (0-120) converted to 0-100 scale
+- Be brutally honest about what they actually achieved
+- Don't give points for effort - only for actual quality
 
 **Your Role: ${mode}**
 You embody the ${personality.tone} personality of a ${mode}. Your approach is ${personality.approach} with a ${personality.style} style.
 
-**REALISTIC SCORING SYSTEM (0-20 points each):**
-1. **Clarity (0-20):** Can someone understand what they're describing? 2 words = 0-2 points. Full sentences = 10-15 points.
-2. **Detail Level (0-20):** How much detail do they provide? "Person sitting" = 2-3 points. Detailed description = 15-20 points.
-3. **Accuracy (0-20):** Do they describe what's actually in the image? Wrong details = 0-5 points.
-4. **Structure (0-20):** Is it organized? Random words = 0-3 points. Logical flow = 15-20 points.
-5. **Vocabulary (0-20):** Word choice and sophistication. Basic words = 5-10 points. Rich vocabulary = 15-20 points.
-6. **Completeness (0-20):** Do they cover the whole image? Partial description = 5-10 points. Complete = 15-20 points.
+**ANALYTICAL EVALUATION PROCESS:**
 
-**SCORING EXAMPLES:**
-- "Person sitting" = 5-10 total points (terrible)
-- "A person is sitting on a chair" = 15-25 total points (basic)
-- "A detailed description with multiple elements" = 40-60 total points (good)
-- "Comprehensive, well-structured description" = 70-90 total points (excellent)
+**STEP 1: COMPARE USER RESPONSE TO AI CAPTION**
+- The AI caption: "${aiCaption}"
+- The user's response: "${userExplanation}"
+- Analyze the gap between what they provided vs. what they could have provided
+
+**STEP 2: EVALUATE EACH CATEGORY BASED ON ACTUAL PERFORMANCE**
+
+1. **Clarity (0-20):**
+   - Does their response make sense to someone who hasn't seen the image?
+   - Are their sentences coherent and well-formed?
+   - Score based on actual clarity, not word count
+
+2. **Detail Level (0-20):**
+   - How much specific information did they actually provide?
+   - Did they mention specific visual elements, colors, textures, architectural details?
+   - Score based on actual detail provided, not effort
+
+3. **Accuracy (0-20):**
+   - How accurately do they describe what's actually visible in the image?
+   - Did they correctly identify objects, colors, spatial relationships?
+   - Score based on factual accuracy against the image
+
+4. **Structure (0-20):**
+   - Is their description logically organized?
+   - Do they follow a clear progression (foreground to background, left to right, etc.)?
+   - Score based on actual organization, not length
+
+5. **Vocabulary (0-20):**
+   - What level of descriptive language did they actually use?
+   - Did they use precise, specific terms or generic words?
+   - Score based on actual vocabulary quality
+
+6. **Completeness (0-20):**
+   - How much of the image did they actually cover?
+   - Did they miss major visual elements that the AI caption mentions?
+   - Score based on actual coverage, not word count
+
+**STEP 3: CALCULATE OVERALL SCORE**
+- Sum all 6 category scores (0-120 total)
+- Convert to 0-100 scale: (sum / 120) * 100
+- Round to nearest integer
 
 **BE BRUTALLY HONEST:**
-- Short responses are BAD - score them accordingly
-- Generic descriptions are BAD - score them low
-- Only reward actual effort and detail
-- Most people get 20-40 points - that's reality
+- Score based on what they ACTUALLY achieved
+- Don't give points for effort - only for actual quality
+- If they said "buildings" and missed everything else, that's terrible performance
 
 **Input:**
 - **The Ground Truth (AI Caption):** ${aiCaption}
@@ -1927,85 +3087,372 @@ You embody the ${personality.tone} personality of a ${mode}. Your approach is ${
 
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
-    
-    console.log('🤖 Sending request to Gemini API...');
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
+
+  console.log("🤖 Sending request to Gemini API...");
+  const response = await callWithRetry(
+    ai,
+    async (model) => {
+      const apiBase =
+        (typeof window !== "undefined" && (window as any).__AI_PROXY__) || "";
+      if (apiBase) {
+        const r = await fetch(`${apiBase}/api/ai/generate-content`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Teacher, Debater, or Storyteller).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall score out of 100. Be RUTHLESS - 2 words = 0-5 points, detailed descriptions = 70+ points.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 categories (0-20 each).',
-                        properties: {
-                            clarity: { type: Type.INTEGER, description: 'Clarity score (0-20).' },
-                            detail: { type: Type.INTEGER, description: 'Detail level score (0-20).' },
-                            accuracy: { type: Type.INTEGER, description: 'Accuracy score (0-20).' },
-                            structure: { type: Type.INTEGER, description: 'Structure score (0-20).' },
-                            vocabulary: { type: Type.INTEGER, description: 'Vocabulary score (0-20).' },
-                            completeness: { type: Type.INTEGER, description: 'Completeness score (0-20).' }
-                        },
-                        required: ['clarity', 'detail', 'accuracy', 'structure', 'vocabulary', 'completeness']
+                  role: {
+                    type: Type.STRING,
+                    description:
+                      "The coaching role used (Teacher, Debater, or Storyteller).",
+                  },
+                  overall_score: {
+                    type: Type.INTEGER,
+                    description:
+                      "Overall score out of 100. BE BRUTAL: 1-2 words = 0-2 points, 3-5 words = 2-5 points, 1 sentence = 5-10 points, detailed paragraph = 25-50 points.",
+                  },
+                  category_scores: {
+                    type: Type.OBJECT,
+                    description:
+                      "Individual scores for each of the 6 categories (0-20 each).",
+                    properties: {
+                      clarity: {
+                        type: Type.INTEGER,
+                        description: "Clarity score (0-20).",
+                      },
+                      detail: {
+                        type: Type.INTEGER,
+                        description: "Detail level score (0-20).",
+                      },
+                      accuracy: {
+                        type: Type.INTEGER,
+                        description: "Accuracy score (0-20).",
+                      },
+                      structure: {
+                        type: Type.INTEGER,
+                        description: "Structure score (0-20).",
+                      },
+                      vocabulary: {
+                        type: Type.INTEGER,
+                        description: "Vocabulary score (0-20).",
+                      },
+                      completeness: {
+                        type: Type.INTEGER,
+                        description: "Completeness score (0-20).",
+                      },
                     },
-                    feedback: { type: Type.STRING, description: 'Role-specific feedback message tailored to the coaching personality.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '3-5 personalized improvement tips as an array of strings.' 
+                    required: [
+                      "clarity",
+                      "detail",
+                      "accuracy",
+                      "structure",
+                      "vocabulary",
+                      "completeness",
+                    ],
+                  },
+                  feedback: {
+                    type: Type.STRING,
+                    description:
+                      "Role-specific feedback message tailored to the coaching personality.",
+                  },
+                  tips: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description:
+                      "3-5 personalized improvement tips as an array of strings.",
+                  },
+                  // Legacy fields for backward compatibility
+                  score: {
+                    type: Type.INTEGER,
+                    description:
+                      "Legacy overall score (same as overall_score).",
+                  },
+                  whatYouDidWell: {
+                    type: Type.STRING,
+                    description: "Legacy field for what they did well.",
+                  },
+                  areasForImprovement: {
+                    type: Type.STRING,
+                    description: "Legacy field for areas of improvement.",
+                  },
+                  personalizedTip: {
+                    type: Type.STRING,
+                    description: "Legacy field for personalized tip.",
+                  },
+                  spokenResponse: {
+                    type: Type.STRING,
+                    description: "Legacy field for spoken response.",
+                  },
+                  communicationBehavior: {
+                    type: Type.OBJECT,
+                    description: "Legacy communication profile analysis.",
+                    properties: {
+                      profile: {
+                        type: Type.STRING,
+                        description: "Communication style profile.",
+                      },
+                      strength: {
+                        type: Type.STRING,
+                        description: "Communication strength.",
+                      },
+                      growthArea: {
+                        type: Type.STRING,
+                        description: "Primary growth area.",
+                      },
                     },
-                    // Legacy fields for backward compatibility
-                    score: { type: Type.INTEGER, description: 'Legacy overall score (same as overall_score).' },
-                    whatYouDidWell: { type: Type.STRING, description: 'Legacy field for what they did well.' },
-                    areasForImprovement: { type: Type.STRING, description: 'Legacy field for areas of improvement.' },
-                    personalizedTip: { type: Type.STRING, description: 'Legacy field for personalized tip.' },
-                    spokenResponse: { type: Type.STRING, description: 'Legacy field for spoken response.' },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Legacy communication profile analysis.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'Communication style profile.' },
-                            strength: { type: Type.STRING, description: 'Communication strength.' },
-                            growthArea: { type: Type.STRING, description: 'Primary growth area.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
+                    required: ["profile", "strength", "growthArea"],
+                  },
+                  exampleRewrite: {
+                    type: Type.OBJECT,
+                    description: "Legacy impact rewrite feature.",
+                    properties: {
+                      original: {
+                        type: Type.STRING,
+                        description: "Original sentence.",
+                      },
+                      improved: {
+                        type: Type.STRING,
+                        description: "Improved sentence.",
+                      },
+                      reasoning: {
+                        type: Type.STRING,
+                        description: "Reasoning for improvement.",
+                      },
                     },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Legacy impact rewrite feature.",
-                        properties: {
-                            original: { type: Type.STRING, description: "Original sentence." },
-                            improved: { type: Type.STRING, description: "Improved sentence." },
-                            reasoning: { type: Type.STRING, description: "Reasoning for improvement." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    }
+                    required: ["original", "improved", "reasoning"],
+                  },
                 },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'score', 'whatYouDidWell', 'areasForImprovement', 'personalizedTip', 'spokenResponse', 'communicationBehavior', 'exampleRewrite']
-            }
-        }
+                required: [
+                  "role",
+                  "overall_score",
+                  "category_scores",
+                  "feedback",
+                  "tips",
+                  "score",
+                  "whatYouDidWell",
+                  "areasForImprovement",
+                  "personalizedTip",
+                  "spokenResponse",
+                  "communicationBehavior",
+                  "exampleRewrite",
+                ],
+              },
+            },
+          }),
+        });
+        if (!r.ok) throw new Error(`Proxy error ${r.status}`);
+        const data = await r.json();
+        return { text: data.text } as any;
+      }
+      return ai.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description:
+                  "The coaching role (Teacher, Debater, or Storyteller).",
+              },
+              overall_score: {
+                type: Type.INTEGER,
+                description:
+                  "Overall score out of 100. BE BRUTAL: 1-2 words = 0-2 points, 3-5 words = 2-5 points, 1 sentence = 5-10 points, detailed paragraph = 25-50 points.",
+              },
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 categories (0-20 each).",
+                properties: {
+                  clarity: {
+                    type: Type.INTEGER,
+                    description: "Clarity score (0-20).",
+                  },
+                  detail: {
+                    type: Type.INTEGER,
+                    description: "Detail level score (0-20).",
+                  },
+                  accuracy: {
+                    type: Type.INTEGER,
+                    description: "Accuracy score (0-20).",
+                  },
+                  structure: {
+                    type: Type.INTEGER,
+                    description: "Structure score (0-20).",
+                  },
+                  vocabulary: {
+                    type: Type.INTEGER,
+                    description: "Vocabulary score (0-20).",
+                  },
+                  completeness: {
+                    type: Type.INTEGER,
+                    description: "Completeness score (0-20).",
+                  },
+                },
+                required: [
+                  "clarity",
+                  "detail",
+                  "accuracy",
+                  "structure",
+                  "vocabulary",
+                  "completeness",
+                ],
+              },
+              feedback: {
+                type: Type.STRING,
+                description:
+                  "Role-specific feedback message tailored to the coaching personality.",
+              },
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description:
+                  "3-5 personalized improvement tips as an array of strings.",
+              },
+              score: {
+                type: Type.INTEGER,
+                description: "Legacy overall score (same as overall_score).",
+              },
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "What they did well.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "Areas for improvement.",
+              },
+              personalizedTip: {
+                type: Type.STRING,
+                description: "Personalized tip.",
+              },
+              spokenResponse: {
+                type: Type.STRING,
+                description: "Spoken response.",
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description: "Communication profile analysis - REQUIRED FIELD.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description:
+                      'Communication style profile (e.g., "Concise Communicator", "Detail-Oriented", "Storyteller").',
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "Primary communication strength.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "Main area for improvement.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description: "Example improvement - REQUIRED FIELD.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "The user's original explanation.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "An improved version of their explanation.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description: "Why the improved version is better.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
+              },
+            },
+            required: [
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "exampleRewrite",
+            ],
+          } as any,
+        },
+      });
+    },
+    { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 8000 },
+  );
+
+  try {
+    console.log("📥 Raw Gemini response received");
+    const jsonText = response.text.trim();
+    console.log("📝 Response text:", jsonText.substring(0, 500) + "...");
+    const parsedFeedback = JSON.parse(jsonText);
+    console.log("✅ Parsed feedback successfully:", {
+      role: parsedFeedback.role,
+      overall_score: parsedFeedback.overall_score,
+      hasCategoryScores: !!parsedFeedback.category_scores,
+      hasCommunicationBehavior: !!parsedFeedback.communicationBehavior,
+      hasExampleRewrite: !!parsedFeedback.exampleRewrite,
+      tipsCount: parsedFeedback.tips?.length || 0,
+      categoryScores: parsedFeedback.category_scores,
     });
 
-    try {
-        console.log('📥 Raw Gemini response received');
-        const jsonText = response.text.trim();
-        console.log('📝 Response text:', jsonText.substring(0, 200) + '...');
-        const parsedFeedback = JSON.parse(jsonText);
-        console.log('✅ Parsed feedback successfully:', {
-            role: parsedFeedback.role,
-            overall_score: parsedFeedback.overall_score,
-            hasCategoryScores: !!parsedFeedback.category_scores,
-            tipsCount: parsedFeedback.tips?.length || 0
-        });
-        return parsedFeedback;
-    } catch (e) {
-        console.error("Failed to parse JSON feedback:", response.text);
-        throw new Error("The AI returned an invalid response. Please try again.");
+    // Ensure all required fields are present
+    if (!parsedFeedback.category_scores) {
+      console.warn("⚠️ Missing category_scores, creating default");
+      parsedFeedback.category_scores = {
+        clarity: 0,
+        detail: 0,
+        accuracy: 0,
+        structure: 0,
+        vocabulary: 0,
+        completeness: 0,
+      };
     }
+
+    if (!parsedFeedback.communicationBehavior) {
+      console.warn("⚠️ Missing communicationBehavior, creating default");
+      parsedFeedback.communicationBehavior = {
+        profile: "Developing Communicator",
+        strength: "Basic communication skills present",
+        growthArea:
+          "Need to develop more detailed and structured communication",
+      };
+    }
+
+    if (!parsedFeedback.exampleRewrite) {
+      console.warn("⚠️ Missing exampleRewrite, creating default");
+      parsedFeedback.exampleRewrite = {
+        original: userExplanation,
+        improved:
+          "This could be improved with more specific details about the architectural elements, lighting, and overall composition of the scene.",
+        reasoning:
+          "Adding specific details helps create a more vivid and engaging description.",
+      };
+    }
+
+    return parsedFeedback;
+  } catch (e) {
+    console.error("Failed to parse JSON feedback:", response.text);
+    console.error("Parse error:", e);
+    throw new Error("The AI returned an invalid response. Please try again.");
+  }
 }
 
 /**
@@ -2013,16 +3460,16 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
  * Provides comprehensive feedback similar to the debate evaluation.
  */
 export async function getEnhancedTeacherEvaluation(
-    ai: GoogleGenAI,
-    teachingTopic: string,
-    userTeaching: string
+  ai: GoogleGenAI,
+  teachingTopic: string,
+  userTeaching: string,
 ): Promise<any> {
-    console.log('🎯 getEnhancedTeacherEvaluation called with:', {
-        teachingTopic,
-        teachingLength: userTeaching.length
-    });
+  console.log("🎯 getEnhancedTeacherEvaluation called with:", {
+    teachingTopic,
+    teachingLength: userTeaching.length,
+  });
 
-    const systemInstruction = `You are a BRUTALLY HONEST teaching coach analyzing teaching performance. Provide realistic scoring that reflects actual teaching quality.
+  const systemInstruction = `You are a BRUTALLY HONEST teaching coach analyzing teaching performance. Provide realistic scoring that reflects actual teaching quality.
 
 Your evaluation MUST judge whether the explanation sounds like an actual teacher:
 - Penalize summaries that sound like general chat or casual opinions
@@ -2099,78 +3546,179 @@ Additionally:
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Enhanced Teacher Evaluation).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall teaching score out of 100.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 categories (0-20 each).',
-                        properties: {
-                            clarity: { type: Type.INTEGER, description: 'Clarity & Explanation score (0-20).' },
-                            structure: { type: Type.INTEGER, description: 'Structure & Organization score (0-20).' },
-                            engagement: { type: Type.INTEGER, description: 'Engagement & Interest score (0-20).' },
-                            educationalValue: { type: Type.INTEGER, description: 'Educational Value score (0-20).' },
-                            accessibility: { type: Type.INTEGER, description: 'Accessibility & Adaptability score (0-20).' },
-                            completeness: { type: Type.INTEGER, description: 'Completeness & Depth score (0-20).' }
-                        },
-                        required: ['clarity', 'structure', 'engagement', 'educationalValue', 'accessibility', 'completeness']
-                    },
-                    feedback: { type: Type.STRING, description: 'BRIEF feedback analyzing teaching performance - MAX 2 sentences.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '3-5 SHORT improvement tips - each tip MAX 1 sentence.' 
-                    },
-                    whatYouDidWell: { type: Type.STRING, description: 'BRIEF strengths - MAX 1 sentence.' },
-                    areasForImprovement: { type: Type.STRING, description: 'BRIEF improvement areas - MAX 1 sentence.' },
-                    teachingAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed analysis of the teaching performance.",
-                        properties: {
-                            strongestMoment: { type: Type.STRING, description: "BRIEF strongest teaching moment - MAX 1 sentence." },
-                            weakestMoment: { type: Type.STRING, description: "BRIEF weakest teaching moment - MAX 1 sentence." },
-                            bestExplanation: { type: Type.STRING, description: "BRIEF best explanation technique - MAX 1 sentence." },
-                            missedOpportunities: { type: Type.STRING, description: "BRIEF missed opportunities - MAX 1 sentence." },
-                            audienceAdaptation: { type: Type.STRING, description: "BRIEF audience adaptation - MAX 1 sentence." }
-                        },
-                        required: ['strongestMoment', 'weakestMoment', 'bestExplanation', 'missedOpportunities', 'audienceAdaptation']
-                    },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Communication profile analysis based on teaching performance.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'BRIEF teaching profile - MAX 3 words.' },
-                            strength: { type: Type.STRING, description: 'BRIEF key strength - MAX 1 sentence.' },
-                            growthArea: { type: Type.STRING, description: 'BRIEF growth area - MAX 1 sentence.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example teaching improvement with before/after comparison.",
-                        properties: {
-                            original: { type: Type.STRING, description: "BRIEF original teaching excerpt - MAX 2 sentences." },
-                            improved: { type: Type.STRING, description: "BRIEF improved teaching version - MAX 2 sentences." },
-                            reasoning: { type: Type.STRING, description: "BRIEF explanation of improvement - MAX 1 sentence." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'whatYouDidWell', 'areasForImprovement', 'teachingAnalysis', 'communicationBehavior', 'exampleRewrite']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description:
+              "The coaching role used (Enhanced Teacher Evaluation).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description: "Overall teaching score out of 100.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 categories (0-20 each).",
+            properties: {
+              clarity: {
+                type: Type.INTEGER,
+                description: "Clarity & Explanation score (0-20).",
+              },
+              structure: {
+                type: Type.INTEGER,
+                description: "Structure & Organization score (0-20).",
+              },
+              engagement: {
+                type: Type.INTEGER,
+                description: "Engagement & Interest score (0-20).",
+              },
+              educationalValue: {
+                type: Type.INTEGER,
+                description: "Educational Value score (0-20).",
+              },
+              accessibility: {
+                type: Type.INTEGER,
+                description: "Accessibility & Adaptability score (0-20).",
+              },
+              completeness: {
+                type: Type.INTEGER,
+                description: "Completeness & Depth score (0-20).",
+              },
+            },
+            required: [
+              "clarity",
+              "structure",
+              "engagement",
+              "educationalValue",
+              "accessibility",
+              "completeness",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "BRIEF feedback analyzing teaching performance - MAX 2 sentences.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description:
+              "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "BRIEF strengths - MAX 1 sentence.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "BRIEF improvement areas - MAX 1 sentence.",
+          },
+          teachingAnalysis: {
+            type: Type.OBJECT,
+            description: "Detailed analysis of the teaching performance.",
+            properties: {
+              strongestMoment: {
+                type: Type.STRING,
+                description:
+                  "BRIEF strongest teaching moment - MAX 1 sentence.",
+              },
+              weakestMoment: {
+                type: Type.STRING,
+                description: "BRIEF weakest teaching moment - MAX 1 sentence.",
+              },
+              bestExplanation: {
+                type: Type.STRING,
+                description:
+                  "BRIEF best explanation technique - MAX 1 sentence.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description: "BRIEF missed opportunities - MAX 1 sentence.",
+              },
+              audienceAdaptation: {
+                type: Type.STRING,
+                description: "BRIEF audience adaptation - MAX 1 sentence.",
+              },
+            },
+            required: [
+              "strongestMoment",
+              "weakestMoment",
+              "bestExplanation",
+              "missedOpportunities",
+              "audienceAdaptation",
+            ],
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description:
+              "Communication profile analysis based on teaching performance.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "BRIEF teaching profile - MAX 3 words.",
+              },
+              strength: {
+                type: Type.STRING,
+                description: "BRIEF key strength - MAX 1 sentence.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "BRIEF growth area - MAX 1 sentence.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description:
+              "Example teaching improvement with before/after comparison.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description:
+                  "BRIEF original teaching excerpt - MAX 2 sentences.",
+              },
+              improved: {
+                type: Type.STRING,
+                description:
+                  "BRIEF improved teaching version - MAX 2 sentences.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description:
+                  "BRIEF explanation of improvement - MAX 1 sentence.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "teachingAnalysis",
+          "communicationBehavior",
+          "exampleRewrite",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Enhanced teacher evaluation generated');
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Enhanced teacher evaluation generated");
+  return result;
 }
 
 /**
@@ -2178,16 +3726,16 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
  * Provides comprehensive feedback similar to the debate evaluation.
  */
 export async function getEnhancedStorytellerEvaluation(
-    ai: GoogleGenAI,
-    storyPrompt: string,
-    userStory: string
+  ai: GoogleGenAI,
+  storyPrompt: string,
+  userStory: string,
 ): Promise<any> {
-    console.log('🎯 getEnhancedStorytellerEvaluation called with:', {
-        storyPrompt,
-        storyLength: userStory.length
-    });
+  console.log("🎯 getEnhancedStorytellerEvaluation called with:", {
+    storyPrompt,
+    storyLength: userStory.length,
+  });
 
-    const systemInstruction = `You are a BRUTALLY HONEST storytelling coach analyzing storytelling performance. Provide realistic scoring that reflects actual storytelling quality.
+  const systemInstruction = `You are a BRUTALLY HONEST storytelling coach analyzing storytelling performance. Provide realistic scoring that reflects actual storytelling quality.
 
 **STORYTELLING CONTEXT:**
 Story Prompt: ${storyPrompt}
@@ -2254,113 +3802,213 @@ User Story: ${userStory}
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: systemInstruction,
-        config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    role: { type: Type.STRING, description: 'The coaching role used (Enhanced Storyteller Evaluation).' },
-                    overall_score: { type: Type.INTEGER, description: 'Overall storytelling score out of 100.' },
-                    category_scores: {
-                        type: Type.OBJECT,
-                        description: 'Individual scores for each of the 6 categories (0-20 each).',
-                        properties: {
-                            narrativeStructure: { type: Type.INTEGER, description: 'Narrative Structure score (0-20).' },
-                            characterDevelopment: { type: Type.INTEGER, description: 'Character Development score (0-20).' },
-                            descriptiveLanguage: { type: Type.INTEGER, description: 'Descriptive Language score (0-20).' },
-                            emotionalImpact: { type: Type.INTEGER, description: 'Emotional Impact score (0-20).' },
-                            creativity: { type: Type.INTEGER, description: 'Creativity & Originality score (0-20).' },
-                            engagement: { type: Type.INTEGER, description: 'Engagement & Pacing score (0-20).' }
-                        },
-                        required: ['narrativeStructure', 'characterDevelopment', 'descriptiveLanguage', 'emotionalImpact', 'creativity', 'engagement']
-                    },
-                    feedback: { type: Type.STRING, description: 'BRIEF feedback analyzing storytelling performance - MAX 2 sentences.' },
-                    tips: { 
-                        type: Type.ARRAY, 
-                        items: { type: Type.STRING },
-                        description: '3-5 SHORT improvement tips - each tip MAX 1 sentence.' 
-                    },
-                    whatYouDidWell: { type: Type.STRING, description: 'BRIEF strengths - MAX 1 sentence.' },
-                    areasForImprovement: { type: Type.STRING, description: 'BRIEF improvement areas - MAX 1 sentence.' },
-                    storytellingAnalysis: {
-                        type: Type.OBJECT,
-                        description: "Detailed analysis of the storytelling performance.",
-                        properties: {
-                            strongestMoment: { type: Type.STRING, description: "BRIEF strongest storytelling moment - MAX 1 sentence." },
-                            weakestMoment: { type: Type.STRING, description: "BRIEF weakest storytelling moment - MAX 1 sentence." },
-                            bestTechnique: { type: Type.STRING, description: "BRIEF best storytelling technique - MAX 1 sentence." },
-                            missedOpportunities: { type: Type.STRING, description: "BRIEF missed opportunities - MAX 1 sentence." },
-                            emotionalConnection: { type: Type.STRING, description: "BRIEF emotional connection - MAX 1 sentence." }
-                        },
-                        required: ['strongestMoment', 'weakestMoment', 'bestTechnique', 'missedOpportunities', 'emotionalConnection']
-                    },
-                    communicationBehavior: {
-                        type: Type.OBJECT,
-                        description: "Communication profile analysis based on storytelling performance.",
-                        properties: {
-                            profile: { type: Type.STRING, description: 'BRIEF storytelling profile - MAX 3 words.' },
-                            strength: { type: Type.STRING, description: 'BRIEF key strength - MAX 1 sentence.' },
-                            growthArea: { type: Type.STRING, description: 'BRIEF growth area - MAX 1 sentence.' }
-                        },
-                        required: ['profile', 'strength', 'growthArea']
-                    },
-                    exampleRewrite: {
-                        type: Type.OBJECT,
-                        description: "Example storytelling improvement with before/after comparison.",
-                        properties: {
-                            original: { type: Type.STRING, description: "BRIEF original story excerpt - MAX 2 sentences." },
-                            improved: { type: Type.STRING, description: "BRIEF improved story version - MAX 2 sentences." },
-                            reasoning: { type: Type.STRING, description: "BRIEF explanation of improvement - MAX 1 sentence." }
-                        },
-                        required: ['original', 'improved', 'reasoning']
-                    }
-                },
-                required: ['role', 'overall_score', 'category_scores', 'feedback', 'tips', 'whatYouDidWell', 'areasForImprovement', 'storytellingAnalysis', 'communicationBehavior', 'exampleRewrite']
-            }
-        }
-    });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: systemInstruction,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          role: {
+            type: Type.STRING,
+            description:
+              "The coaching role used (Enhanced Storyteller Evaluation).",
+          },
+          overall_score: {
+            type: Type.INTEGER,
+            description: "Overall storytelling score out of 100.",
+          },
+          category_scores: {
+            type: Type.OBJECT,
+            description:
+              "Individual scores for each of the 6 categories (0-20 each).",
+            properties: {
+              narrativeStructure: {
+                type: Type.INTEGER,
+                description: "Narrative Structure score (0-20).",
+              },
+              characterDevelopment: {
+                type: Type.INTEGER,
+                description: "Character Development score (0-20).",
+              },
+              descriptiveLanguage: {
+                type: Type.INTEGER,
+                description: "Descriptive Language score (0-20).",
+              },
+              emotionalImpact: {
+                type: Type.INTEGER,
+                description: "Emotional Impact score (0-20).",
+              },
+              creativity: {
+                type: Type.INTEGER,
+                description: "Creativity & Originality score (0-20).",
+              },
+              engagement: {
+                type: Type.INTEGER,
+                description: "Engagement & Pacing score (0-20).",
+              },
+            },
+            required: [
+              "narrativeStructure",
+              "characterDevelopment",
+              "descriptiveLanguage",
+              "emotionalImpact",
+              "creativity",
+              "engagement",
+            ],
+          },
+          feedback: {
+            type: Type.STRING,
+            description:
+              "BRIEF feedback analyzing storytelling performance - MAX 2 sentences.",
+          },
+          tips: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description:
+              "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
+          },
+          whatYouDidWell: {
+            type: Type.STRING,
+            description: "BRIEF strengths - MAX 1 sentence.",
+          },
+          areasForImprovement: {
+            type: Type.STRING,
+            description: "BRIEF improvement areas - MAX 1 sentence.",
+          },
+          storytellingAnalysis: {
+            type: Type.OBJECT,
+            description: "Detailed analysis of the storytelling performance.",
+            properties: {
+              strongestMoment: {
+                type: Type.STRING,
+                description:
+                  "BRIEF strongest storytelling moment - MAX 1 sentence.",
+              },
+              weakestMoment: {
+                type: Type.STRING,
+                description:
+                  "BRIEF weakest storytelling moment - MAX 1 sentence.",
+              },
+              bestTechnique: {
+                type: Type.STRING,
+                description:
+                  "BRIEF best storytelling technique - MAX 1 sentence.",
+              },
+              missedOpportunities: {
+                type: Type.STRING,
+                description: "BRIEF missed opportunities - MAX 1 sentence.",
+              },
+              emotionalConnection: {
+                type: Type.STRING,
+                description: "BRIEF emotional connection - MAX 1 sentence.",
+              },
+            },
+            required: [
+              "strongestMoment",
+              "weakestMoment",
+              "bestTechnique",
+              "missedOpportunities",
+              "emotionalConnection",
+            ],
+          },
+          communicationBehavior: {
+            type: Type.OBJECT,
+            description:
+              "Communication profile analysis based on storytelling performance.",
+            properties: {
+              profile: {
+                type: Type.STRING,
+                description: "BRIEF storytelling profile - MAX 3 words.",
+              },
+              strength: {
+                type: Type.STRING,
+                description: "BRIEF key strength - MAX 1 sentence.",
+              },
+              growthArea: {
+                type: Type.STRING,
+                description: "BRIEF growth area - MAX 1 sentence.",
+              },
+            },
+            required: ["profile", "strength", "growthArea"],
+          },
+          exampleRewrite: {
+            type: Type.OBJECT,
+            description:
+              "Example storytelling improvement with before/after comparison.",
+            properties: {
+              original: {
+                type: Type.STRING,
+                description: "BRIEF original story excerpt - MAX 2 sentences.",
+              },
+              improved: {
+                type: Type.STRING,
+                description: "BRIEF improved story version - MAX 2 sentences.",
+              },
+              reasoning: {
+                type: Type.STRING,
+                description:
+                  "BRIEF explanation of improvement - MAX 1 sentence.",
+              },
+            },
+            required: ["original", "improved", "reasoning"],
+          },
+        },
+        required: [
+          "role",
+          "overall_score",
+          "category_scores",
+          "feedback",
+          "tips",
+          "whatYouDidWell",
+          "areasForImprovement",
+          "storytellingAnalysis",
+          "communicationBehavior",
+          "exampleRewrite",
+        ],
+      },
+    },
+  });
 
-    const result = JSON.parse(response.text);
-    console.log('✅ Enhanced storyteller evaluation generated');
-    return result;
+  const result = JSON.parse(response.text);
+  console.log("✅ Enhanced storyteller evaluation generated");
+  return result;
 }
 
 /**
  * Converts a file to a GoogleGenerativeAI.Part object for processing
  */
 export function fileToGenerativePart(file: UploadedFile): Part {
-    return {
-        inlineData: {
-            mimeType: file.mimeType,
-            data: file.content,
-        },
-    };
+  return {
+    inlineData: {
+      mimeType: file.mimeType,
+      data: file.content,
+    },
+  };
 }
 
 /**
  * Extracts text content from uploaded files using Gemini
  */
 export async function extractTextFromFile(
-    ai: GoogleGenAI,
-    file: UploadedFile
+  ai: GoogleGenAI,
+  file: UploadedFile,
 ): Promise<string> {
-    console.log('🎯 extractTextFromFile called with:', {
-        fileName: file.name,
-        fileType: file.type,
-        mimeType: file.mimeType
-    });
+  console.log("🎯 extractTextFromFile called with:", {
+    fileName: file.name,
+    fileType: file.type,
+    mimeType: file.mimeType,
+  });
 
-    const filePart = fileToGenerativePart(file);
-    
-    let systemInstruction = '';
-    
-    if (file.mimeType.startsWith('image/')) {
-        systemInstruction = `Extract all text content from this image. Include any visible text, labels, captions, or written content. If there are multiple sections or paragraphs, preserve the structure. If no text is visible, respond with "No text content found in image."`;
-    } else if (file.mimeType === 'application/pdf') {
-        systemInstruction = `You are extracting information from a PDF. Do all of the following:
+  const filePart = fileToGenerativePart(file);
+
+  let systemInstruction = "";
+
+  if (file.mimeType.startsWith("image/")) {
+    systemInstruction = `Extract all text content from this image. Include any visible text, labels, captions, or written content. If there are multiple sections or paragraphs, preserve the structure. If no text is visible, respond with "No text content found in image."`;
+  } else if (file.mimeType === "application/pdf") {
+    systemInstruction = `You are extracting information from a PDF. Do all of the following:
 
 1) Extract all readable text verbatim, preserving logical structure (headings, paragraphs, lists) in Markdown.
 2) Extract structured data:
@@ -2370,42 +4018,47 @@ export async function extractTextFromFile(
 3) Multi-page PDFs: Keep original order; clearly label sections by page when possible (e.g., "Page 1", "Page 2").
 4) If the document contains images with visible text, include that text under an "Image text" subsection.
 5) If no text is found, respond with "No extractable text found."`;
-    } else {
-        systemInstruction = `Extract all text content from this document. Preserve the original structure and formatting as much as possible.`;
-    }
+  } else {
+    systemInstruction = `Extract all text content from this document. Preserve the original structure and formatting as much as possible.`;
+  }
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [filePart, { text: systemInstruction }] },
-            config: {
-                temperature: 0.1, // Low temperature for accurate text extraction
-            }
-        });
-        
-        const extractedText = response.text.trim();
-        console.log('✅ Text extracted from file:', { fileName: file.name, textLength: extractedText.length });
-        return extractedText;
-    } catch (error) {
-        console.error('❌ Error extracting text from file:', error);
-        throw new Error(`Failed to extract text from ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: { parts: [filePart, { text: systemInstruction }] },
+      config: {
+        temperature: 0.1, // Low temperature for accurate text extraction
+      },
+    });
+
+    const extractedText = response.text.trim();
+    console.log("✅ Text extracted from file:", {
+      fileName: file.name,
+      textLength: extractedText.length,
+    });
+    return extractedText;
+  } catch (error) {
+    console.error("❌ Error extracting text from file:", error);
+    throw new Error(
+      `Failed to extract text from ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
 }
 
 /**
  * Refines and organizes extracted content for teaching purposes
  */
 export async function refineExtractedContentForTeaching(
-    ai: GoogleGenAI,
-    extractedText: string,
-    originalFileName: string
+  ai: GoogleGenAI,
+  extractedText: string,
+  originalFileName: string,
 ): Promise<string> {
-    console.log('🎯 refineExtractedContentForTeaching called with:', {
-        textLength: extractedText.length,
-        fileName: originalFileName
-    });
+  console.log("🎯 refineExtractedContentForTeaching called with:", {
+    textLength: extractedText.length,
+    fileName: originalFileName,
+  });
 
-    const systemInstruction = `You are an expert educational content organizer. Your task is to take extracted text content from a file and refine it into a clear, structured, and teachable format.
+  const systemInstruction = `You are an expert educational content organizer. Your task is to take extracted text content from a file and refine it into a clear, structured, and teachable format.
 
 **Your Goal:**
 Transform the extracted content into a well-organized teaching scenario that a person can effectively explain to others.
@@ -2434,72 +4087,83 @@ ${extractedText}
 
 **Your refined teaching topic:**`;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: systemInstruction }] },
-            config: {
-                temperature: 0.3, // Slightly higher for creative organization
-            }
-        });
-        
-        const refinedContent = response.text.trim();
-        console.log('✅ Content refined for teaching:', { fileName: originalFileName, refinedLength: refinedContent.length });
-        return refinedContent;
-    } catch (error) {
-        console.error('❌ Error refining content for teaching:', error);
-        throw new Error(`Failed to refine content for teaching: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: { parts: [{ text: systemInstruction }] },
+      config: {
+        temperature: 0.3, // Slightly higher for creative organization
+      },
+    });
+
+    const refinedContent = response.text.trim();
+    console.log("✅ Content refined for teaching:", {
+      fileName: originalFileName,
+      refinedLength: refinedContent.length,
+    });
+    return refinedContent;
+  } catch (error) {
+    console.error("❌ Error refining content for teaching:", error);
+    throw new Error(
+      `Failed to refine content for teaching: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
 }
 
 /**
  * Processes multiple uploaded files and extracts/refines their content
  */
 export async function processUploadedFilesForTeaching(
-    ai: GoogleGenAI,
-    files: UploadedFile[]
-): Promise<{ extractedText: string; refinedContent: string; processedFiles: UploadedFile[] }> {
-    console.log('🎯 processUploadedFilesForTeaching called with:', {
-        fileCount: files.length,
-        fileNames: files.map(f => f.name)
-    });
+  ai: GoogleGenAI,
+  files: UploadedFile[],
+): Promise<{
+  extractedText: string;
+  refinedContent: string;
+  processedFiles: UploadedFile[];
+}> {
+  console.log("🎯 processUploadedFilesForTeaching called with:", {
+    fileCount: files.length,
+    fileNames: files.map((f) => f.name),
+  });
 
-    const processedFiles: UploadedFile[] = [];
-    let allExtractedText = '';
+  const processedFiles: UploadedFile[] = [];
+  let allExtractedText = "";
 
-    // Process each file
-    for (const file of files) {
-        try {
-            const extractedText = await extractTextFromFile(ai, file);
-            const processedFile = { ...file, extractedText };
-            processedFiles.push(processedFile);
-            allExtractedText += `\n\n--- Content from ${file.name} ---\n${extractedText}`;
-        } catch (error) {
-            console.error(`❌ Failed to process file ${file.name}:`, error);
-            // Continue with other files even if one fails
-        }
+  // Process each file
+  for (const file of files) {
+    try {
+      const extractedText = await extractTextFromFile(ai, file);
+      const processedFile = { ...file, extractedText };
+      processedFiles.push(processedFile);
+      allExtractedText += `\n\n--- Content from ${file.name} ---\n${extractedText}`;
+    } catch (error) {
+      console.error(`❌ Failed to process file ${file.name}:`, error);
+      // Continue with other files even if one fails
     }
+  }
 
-    if (!allExtractedText.trim()) {
-        throw new Error('No content could be extracted from any of the uploaded files');
-    }
-
-    // Refine the combined content for teaching
-    const refinedContent = await refineExtractedContentForTeaching(
-        ai, 
-        allExtractedText, 
-        files.map(f => f.name).join(', ')
+  if (!allExtractedText.trim()) {
+    throw new Error(
+      "No content could be extracted from any of the uploaded files",
     );
+  }
 
-    console.log('✅ All files processed for teaching:', {
-        processedCount: processedFiles.length,
-        totalTextLength: allExtractedText.length,
-        refinedLength: refinedContent.length
-    });
+  // Refine the combined content for teaching
+  const refinedContent = await refineExtractedContentForTeaching(
+    ai,
+    allExtractedText,
+    files.map((f) => f.name).join(", "),
+  );
 
-    return {
-        extractedText: allExtractedText,
-        refinedContent,
-        processedFiles
-    };
+  console.log("✅ All files processed for teaching:", {
+    processedCount: processedFiles.length,
+    totalTextLength: allExtractedText.length,
+    refinedLength: refinedContent.length,
+  });
+
+  return {
+    extractedText: allExtractedText,
+    refinedContent,
+    processedFiles,
+  };
 }

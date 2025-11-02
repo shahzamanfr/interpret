@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphone Permission Fix Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 700px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .step-container {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 10px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .step-number {
+            background: #3b82f6;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .step-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .step-content {
+            margin-left: 42px;
+            color: #475569;
+            line-height: 1.6;
+        }
+
+        .status-box {
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .status-checking {
+            background: #fef3c7;
+            color: #92400e;
+            border: 2px solid #fbbf24;
+        }
+
+        .status-denied {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 2px solid #ef4444;
+            animation: shake 0.5s;
+        }
+
+        .status-granted {
+            background: #d1fae5;
+            color: #065f46;
+            border: 2px solid #10b981;
+        }
+
+        .status-prompt {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 2px solid #3b82f6;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        button {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+
+        .info-box h3 {
+            color: #1e40af;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            color: #1e3a8a;
+            font-size: 14px;
+            line-height: 2;
+        }
+
+        .warning-box {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+
+        .warning-box h3 {
+            color: #92400e;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .warning-box p {
+            color: #92400e;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .log {
+            background: #1f2937;
+            color: #10b981;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .log-entry.error {
+            color: #ef4444;
+        }
+
+        .log-entry.success {
+            color: #10b981;
+        }
+
+        .log-entry.info {
+            color: #60a5fa;
+        }
+
+        .log-entry.warning {
+            color: #fbbf24;
+        }
+
+        .browser-info {
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-size: 13px;
+            color: #475569;
+        }
+
+        .browser-info strong {
+            color: #1e293b;
+        }
+
+        .permission-steps {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .permission-steps ol {
+            margin-left: 20px;
+            line-height: 2;
+            color: #475569;
+        }
+
+        .permission-steps li {
+            margin-bottom: 10px;
+        }
+
+        .permission-steps code {
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .icon {
+            font-size: 24px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .test-result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .test-result.show {
+            display: block;
+        }
+
+        .test-result.success {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+            color: #065f46;
+        }
+
+        .test-result.failure {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+        }
+
+        .test-result h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .test-audio {
+            width: 100%;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Microphone Permission Fix</h1>
+        <p class="subtitle">Let's diagnose and fix your microphone permissions</p>
+
+        <div id="statusBox" class="status-box status-checking">
+            🔍 Checking microphone permissions...
+        </div>
+
+        <div class="browser-info">
+            <strong>🌐 Browser:</strong> <span id="browserName">Detecting...</span><br>
+            <strong>💻 Platform:</strong> <span id="platformName">Detecting...</span><br>
+            <strong>🔒 Secure Context:</strong> <span id="secureContext">Checking...</span>
+        </div>
+
+        <div id="permissionGuide" class="hidden">
+            <div class="step-container">
+                <div class="step-header">
+                    <div class="step-number">1</div>
+                    <div class="step-title">Request Fresh Permissions</div>
+                </div>
+                <div class="step-content">
+                    <p>Click the button below to request microphone access. A popup will appear asking for permission.</p>
+                    <button id="requestPermBtn" class="btn-primary">
+                        <span class="icon">🎤</span>
+                        Request Microphone Access
+                    </button>
+                </div>
+            </div>
+
+            <div class="step-container">
+                <div class="step-header">
+                    <div class="step-number">2</div>
+                    <div class="step-title">Check Browser Settings</div>
+                </div>
+                <div class="step-content">
+                    <p>If the popup doesn't appear, manually check your browser settings:</p>
+                    <div class="permission-steps">
+                        <strong>For Chrome/Edge:</strong>
+                        <ol>
+                            <li>Look for the 🔒 lock icon in the address bar</li>
+                            <li>Click it and find "Microphone" settings</li>
+                            <li>Change from "Block" to "Allow"</li>
+                            <li>Refresh this page</li>
+                        </ol>
+                        <strong>Or visit:</strong><br>
+                        Chrome: <code>chrome://settings/content/microphone</code><br>
+                        Edge: <code>edge://settings/content/microphone</code>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step-container">
+                <div class="step-header">
+                    <div class="step-number">3</div>
+                    <div class="step-title">Test Microphone</div>
+                </div>
+                <div class="step-content">
+                    <p>After granting permission, test your microphone:</p>
+                    <button id="testMicBtn" class="btn-success" disabled>
+                        <span class="icon">🎙️</span>
+                        Test Microphone Now
+                    </button>
+                    <div id="testResult" class="test-result"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="warning-box">
+            <h3>⚠️ Important Notes:</h3>
+            <p>
+                <strong>1. HTTPS Required:</strong> Microphone access only works on secure connections (https://) or localhost.<br><br>
+                <strong>2. Browser Support:</strong> Use Chrome, Edge, or Safari. Firefox has limited support.<br><br>
+                <strong>3. Incognito Mode:</strong> Some browsers block microphone in private/incognito mode.<br><br>
+                <strong>4. System Permissions:</strong> Make sure your OS allows browser access to microphone.
+            </p>
+        </div>
+
+        <div class="info-box">
+            <h3>💡 Quick Fixes:</h3>
+            <ul>
+                <li>Refresh the page after changing permissions</li>
+                <li>Try a different browser (Chrome recommended)</li>
+                <li>Check if other apps can access your microphone</li>
+                <li>Restart your browser completely</li>
+                <li>Check system microphone settings (Windows Settings → Privacy → Microphone)</li>
+            </ul>
+        </div>
+
+        <button id="resetBtn" class="btn-danger">
+            <span class="icon">🔄</span>
+            Reset & Check Again
+        </button>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const statusBox = document.getElementById('statusBox');
+        const permissionGuide = document.getElementById('permissionGuide');
+        const requestPermBtn = document.getElementById('requestPermBtn');
+        const testMicBtn = document.getElementById('testMicBtn');
+        const testResult = document.getElementById('testResult');
+        const resetBtn = document.getElementById('resetBtn');
+        const logEl = document.getElementById('log');
+
+        let mediaStream = null;
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateStatus(message, type) {
+            statusBox.textContent = message;
+            statusBox.className = `status-box status-${type}`;
+        }
+
+        function detectBrowser() {
+            const ua = navigator.userAgent;
+            let browserName = 'Unknown';
+
+            if (ua.includes('Edg/')) {
+                browserName = 'Microsoft Edge';
+            } else if (ua.includes('Chrome/') && !ua.includes('Edg/')) {
+                browserName = 'Google Chrome';
+            } else if (ua.includes('Safari/') && !ua.includes('Chrome/')) {
+                browserName = 'Safari';
+            } else if (ua.includes('Firefox/')) {
+                browserName = 'Firefox';
+            }
+
+            document.getElementById('browserName').textContent = browserName;
+            document.getElementById('platformName').textContent = navigator.platform;
+            document.getElementById('secureContext').textContent =
+                window.isSecureContext ? '✅ Yes (HTTPS or localhost)' : '❌ No (Must use HTTPS!)';
+
+            log(`Browser: ${browserName}`, 'info');
+            log(`Platform: ${navigator.platform}`, 'info');
+            log(`Secure context: ${window.isSecureContext}`, window.isSecureContext ? 'success' : 'error');
+
+            return browserName;
+        }
+
+        async function checkPermissions() {
+            log('Starting permission check...', 'info');
+
+            if (!window.isSecureContext) {
+                updateStatus('❌ Insecure Connection - Microphone requires HTTPS!', 'denied');
+                log('Page must be served over HTTPS or localhost', 'error');
+                permissionGuide.classList.remove('hidden');
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                updateStatus('❌ getUserMedia not supported in this browser', 'denied');
+                log('MediaDevices API not available', 'error');
+                permissionGuide.classList.remove('hidden');
+                return;
+            }
+
+            // Check permission state
+            try {
+                if (navigator.permissions) {
+                    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+                    log(`Permission state: ${permissionStatus.state}`, 'info');
+
+                    permissionStatus.onchange = () => {
+                        log(`Permission changed to: ${permissionStatus.state}`, 'warning');
+                        checkPermissions();
+                    };
+
+                    if (permissionStatus.state === 'granted') {
+                        updateStatus('✅ Microphone permission granted!', 'granted');
+                        log('Permission granted', 'success');
+                        testMicBtn.disabled = false;
+                        permissionGuide.classList.remove('hidden');
+                        return;
+                    } else if (permissionStatus.state === 'denied') {
+                        updateStatus('❌ Microphone permission denied - Follow steps below', 'denied');
+                        log('Permission denied - User must manually enable', 'error');
+                        permissionGuide.classList.remove('hidden');
+                        return;
+                    } else {
+                        updateStatus('⏳ Microphone permission not set - Click request button below', 'prompt');
+                        log('Permission prompt required', 'warning');
+                        permissionGuide.classList.remove('hidden');
+                        return;
+                    }
+                }
+            } catch (err) {
+                log(`Permission query error: ${err.message}`, 'warning');
+            }
+
+            // Fallback: Try to request directly
+            updateStatus('⏳ Ready to request permission - Click button below', 'prompt');
+            permissionGuide.classList.remove('hidden');
+        }
+
+        async function requestPermission() {
+            log('Requesting microphone permission...', 'info');
+            updateStatus('⏳ Requesting permission... Check browser popup!', 'prompt');
+            requestPermBtn.disabled = true;
+
+            try {
+                // Clean up any existing stream
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Request microphone access
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: false
+                });
+
+                log('✅ Microphone access granted!', 'success');
+                updateStatus('✅ Success! Microphone permission granted!', 'granted');
+                testMicBtn.disabled = false;
+
+                // Show some info about the stream
+                const audioTracks = mediaStream.getAudioTracks();
+                if (audioTracks.length > 0) {
+                    log(`Audio device: ${audioTracks[0].label}`, 'success');
+                }
+
+            } catch (err) {
+                log(`❌ Permission denied: ${err.name} - ${err.message}`, 'error');
+
+                if (err.name === 'NotAllowedError') {
+                    updateStatus('❌ Permission denied - Follow manual steps below', 'denied');
+                    alert('❌ Microphone access denied!\n\nPlease:\n1. Click the 🔒 lock icon in the address bar\n2. Find "Microphone" and set it to "Allow"\n3. Refresh this page');
+                } else if (err.name === 'NotFoundError') {
+                    updateStatus('❌ No microphone found on this device', 'denied');
+                    alert('❌ No microphone found!\n\nPlease connect a microphone and try again.');
+                } else {
+                    updateStatus(`❌ Error: ${err.name}`, 'denied');
+                    alert(`Error: ${err.message}`);
+                }
+            } finally {
+                requestPermBtn.disabled = false;
+            }
+        }
+
+        async function testMicrophone() {
+            log('Testing microphone...', 'info');
+            testMicBtn.disabled = true;
+            testResult.classList.remove('show');
+
+            try {
+                // Clean up any existing stream
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Get fresh stream
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: false
+                });
+
+                log('✅ Microphone stream acquired', 'success');
+
+                // Create audio context to analyze audio
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const analyser = audioContext.createAnalyser();
+                const microphone = audioContext.createMediaStreamSource(mediaStream);
+                microphone.connect(analyser);
+                analyser.fftSize = 256;
+
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+
+                // Check for audio input
+                let maxVolume = 0;
+                let checkCount = 0;
+                const maxChecks = 50;
+
+                const checkAudio = setInterval(() => {
+                    analyser.getByteFrequencyData(dataArray);
+                    const volume = dataArray.reduce((a, b) => a + b) / bufferLength;
+
+                    if (volume > maxVolume) {
+                        maxVolume = volume;
+                    }
+
+                    checkCount++;
+                    if (checkCount >= maxChecks) {
+                        clearInterval(checkAudio);
+
+                        if (maxVolume > 0) {
+                            log(`✅ Audio detected! Max volume: ${maxVolume.toFixed(2)}`, 'success');
+                            testResult.className = 'test-result success show';
+                            testResult.innerHTML = `
+                                <h3>✅ Microphone Working!</h3>
+                                <p>Your microphone is properly connected and working.</p>
+                                <p>Maximum volume detected: ${maxVolume.toFixed(2)}</p>
+                                <p><strong>You can now use voice input in your app!</strong></p>
+                            `;
+                        } else {
+                            log('⚠️ No audio detected', 'warning');
+                            testResult.className = 'test-result failure show';
+                            testResult.innerHTML = `
+                                <h3>⚠️ No Audio Detected</h3>
+                                <p>Microphone is connected but no sound was detected.</p>
+                                <p>Please try:</p>
+                                <ul>
+                                    <li>Speaking while the test is running</li>
+                                    <li>Checking your microphone volume settings</li>
+                                    <li>Using a different microphone</li>
+                                    <li>Testing in System Settings</li>
+                                </ul>
+                            `;
+                        }
+
+                        // Cleanup
+                        audioContext.close();
+                        mediaStream.getTracks().forEach(track => track.stop());
+                        testMicBtn.disabled = false;
+                    }
+                }, 100);
+
+                log('🎤 Listening for 5 seconds... Please speak!', 'info');
+                alert('🎤 Microphone test starting!\n\nPlease speak or make some noise for the next 5 seconds...');
+
+            } catch (err) {
+                log(`❌ Test failed: ${err.message}`, 'error');
+                testResult.className = 'test-result failure show';
+                testResult.innerHTML = `
+                    <h3>❌ Test Failed</h3>
+                    <p>Error: ${err.message}</p>
+                    <p>Please check your microphone connection and permissions.</p>
+                `;
+                testMicBtn.disabled = false;
+            }
+        }
+
+        function reset() {
+            log('Resetting...', 'info');
+
+            // Clean up streams
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            // Reset UI
+            testResult.classList.remove('show');
+            testMicBtn.disabled = true;
+            logEl.innerHTML = '';
+
+            // Re-check
+            checkPermissions();
+        }
+
+        // Event listeners
+        requestPermBtn.addEventListener('click', requestPermission);
+        testMicBtn.addEventListener('click', testMicrophone);
+        resetBtn.addEventListener('click', reset);
+
+        // Initialize
+        window.addEventListener('load', () => {
+            log('Page loaded', 'info');
+            detectBrowser();
+            setTimeout(checkPermissions, 500);
+        });
+
+        // Cleanup on unload
+        window.addEventListener('beforeunload', () => {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>

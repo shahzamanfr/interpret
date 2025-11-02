@@ -1,7 +1,19 @@
-import React, { useState, useRef } from 'react';
-import { CoachMode, Feedback, LoadingState, UploadedFile, FileUploadState } from '../types';
-import { getTextScenarioFeedback, refineScenarioForTeaching, getEnhancedTeacherEvaluation, processUploadedFilesForTeaching } from '../services/geminiService';
-import { useTheme } from '../contexts/ThemeContext';
+import React, { useState, useRef } from "react";
+import {
+  CoachMode,
+  Feedback,
+  LoadingState,
+  UploadedFile,
+  FileUploadState,
+} from "../types";
+import {
+  getTextScenarioFeedback,
+  refineScenarioForTeaching,
+  getEnhancedTeacherEvaluation,
+  processUploadedFilesForTeaching,
+} from "../services/geminiService";
+import { useTheme } from "../contexts/ThemeContext";
+import CustomVoiceRecorder from "./CustomVoiceRecorder";
 
 interface TeacherInterfaceProps {
   onBack: () => void;
@@ -10,25 +22,31 @@ interface TeacherInterfaceProps {
 
 const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
   const { theme } = useTheme();
-  const [currentStep, setCurrentStep] = useState<'input' | 'refined' | 'teaching' | 'feedback'>('input');
-  const [userScenario, setUserScenario] = useState<string>('');
-  const [refinedScenario, setRefinedScenario] = useState<string>('');
-  const [userTeaching, setUserTeaching] = useState<string>('');
+  const [currentStep, setCurrentStep] = useState<
+    "input" | "refined" | "teaching" | "feedback"
+  >("input");
+  const [userScenario, setUserScenario] = useState<string>("");
+  const [refinedScenario, setRefinedScenario] = useState<string>("");
+  const [userTeaching, setUserTeaching] = useState<string>("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [loadingState, setLoadingState] = useState<LoadingState>(LoadingState.Idle);
+  const [loadingState, setLoadingState] = useState<LoadingState>(
+    LoadingState.Idle,
+  );
   const [error, setError] = useState<string | null>(null);
-  const [selectedTopic, setSelectedTopic] = useState<string>('');
+  const [selectedTopic, setSelectedTopic] = useState<string>("");
   const [isEditingTopic, setIsEditingTopic] = useState<boolean>(false);
   // Chapter-based teaching state
   type TeachingChapter = { id: string; title: string; content: string };
-  const [teachingChapters, setTeachingChapters] = useState<TeachingChapter[]>([]);
+  const [teachingChapters, setTeachingChapters] = useState<TeachingChapter[]>(
+    [],
+  );
   const [activeChapterIndex, setActiveChapterIndex] = useState<number>(0);
-  
+
   // File upload state
   const [fileUploadState, setFileUploadState] = useState<FileUploadState>({
     files: [],
     isProcessing: false,
-    error: null
+    error: null,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,7 +66,7 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
     "Ancient Egyptian Civilization",
     "The Periodic Table",
     "Economic Systems",
-    "The Immune System"
+    "The Immune System",
   ];
 
   const handleScenarioSubmit = async () => {
@@ -68,11 +86,13 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
     try {
       const refined = await refineScenarioForTeaching(ai, userScenario);
       setRefinedScenario(refined);
-      setCurrentStep('refined');
+      setCurrentStep("refined");
       setLoadingState(LoadingState.Done);
     } catch (err) {
-      console.error('Error refining scenario:', err);
-      setError("An error occurred while refining your scenario. Please try again.");
+      console.error("Error refining scenario:", err);
+      setError(
+        "An error occurred while refining your scenario. Please try again.",
+      );
       setLoadingState(LoadingState.Error);
     }
   };
@@ -81,13 +101,18 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
     const hasChapters = teachingChapters.length > 0;
     const combinedTeaching = hasChapters
       ? teachingChapters
-          .filter(ch => ch.title.trim() || ch.content.trim())
-          .map((ch, idx) => `Chapter ${idx + 1}: ${ch.title || 'Untitled'}\n\n${ch.content}`)
+          .filter((ch) => ch.title.trim() || ch.content.trim())
+          .map(
+            (ch, idx) =>
+              `Chapter ${idx + 1}: ${ch.title || "Untitled"}\n\n${ch.content}`,
+          )
           .join("\n\n---\n\n")
       : userTeaching;
 
     if (!combinedTeaching.trim()) {
-      setError("Please provide your teaching explanation (add chapters or content) before submitting.");
+      setError(
+        "Please provide your teaching explanation (add chapters or content) before submitting.",
+      );
       return;
     }
 
@@ -101,27 +126,31 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
     setFeedback(null);
 
     try {
-      const teacherFeedback = await getEnhancedTeacherEvaluation(ai, refinedScenario, combinedTeaching);
+      const teacherFeedback = await getEnhancedTeacherEvaluation(
+        ai,
+        refinedScenario,
+        combinedTeaching,
+      );
       setFeedback(teacherFeedback);
-      setCurrentStep('feedback');
+      setCurrentStep("feedback");
       setLoadingState(LoadingState.Done);
     } catch (err) {
-      console.error('Error getting teacher feedback:', err);
+      console.error("Error getting teacher feedback:", err);
       setError("An error occurred while getting feedback. Please try again.");
       setLoadingState(LoadingState.Error);
     }
   };
 
   const resetInterface = () => {
-    setCurrentStep('input');
-    setUserScenario('');
-    setRefinedScenario('');
-    setUserTeaching('');
+    setCurrentStep("input");
+    setUserScenario("");
+    setRefinedScenario("");
+    setUserTeaching("");
     setFeedback(null);
     setError(null);
     setLoadingState(LoadingState.Idle);
     setFileUploadState({ files: [], isProcessing: false, error: null });
-    setSelectedTopic('');
+    setSelectedTopic("");
     setIsEditingTopic(false);
     setTeachingChapters([]);
     setActiveChapterIndex(0);
@@ -140,28 +169,43 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
     setIsEditingTopic(false);
   };
 
+  // Voice recording handlers
+  const handleScenarioTranscript = (text: string) => {
+    setUserScenario(text);
+  };
+
+  const handleTeachingTranscript = (text: string) => {
+    setUserTeaching(text);
+  };
+
+  const handleChapterTranscript = (text: string, chapterId: string) => {
+    setTeachingChapters((prev) =>
+      prev.map((ch) => (ch.id === chapterId ? { ...ch, content: text } : ch)),
+    );
+  };
+
   // File handling functions
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
     const newFiles: UploadedFile[] = [];
-    
+
     Array.from(files).forEach((file) => {
       // Check file type
-      if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
-        setFileUploadState(prev => ({
+      if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
+        setFileUploadState((prev) => ({
           ...prev,
-          error: `Unsupported file type: ${file.type}. Please upload images or PDF files only.`
+          error: `Unsupported file type: ${file.type}. Please upload images or PDF files only.`,
         }));
         return;
       }
 
       // Check file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
-        setFileUploadState(prev => ({
+        setFileUploadState((prev) => ({
           ...prev,
-          error: `File ${file.name} is too large. Maximum size is 10MB.`
+          error: `File ${file.name} is too large. Maximum size is 10MB.`,
         }));
         return;
       }
@@ -169,21 +213,21 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const content = e.target?.result as string;
-        const base64Content = content.split(',')[1]; // Remove data:type;base64, prefix
-        
+        const base64Content = content.split(",")[1]; // Remove data:type;base64, prefix
+
         const uploadedFile: UploadedFile = {
           id: Math.random().toString(36).substr(2, 9),
           name: file.name,
           type: file.type,
           size: file.size,
           content: base64Content,
-          mimeType: file.type
+          mimeType: file.type,
         };
 
-        setFileUploadState(prev => ({
+        setFileUploadState((prev) => ({
           ...prev,
           files: [...prev.files, uploadedFile],
-          error: null
+          error: null,
         }));
       };
       reader.readAsDataURL(file);
@@ -191,9 +235,9 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
   };
 
   const removeFile = (fileId: string) => {
-    setFileUploadState(prev => ({
+    setFileUploadState((prev) => ({
       ...prev,
-      files: prev.files.filter(f => f.id !== fileId)
+      files: prev.files.filter((f) => f.id !== fileId),
     }));
   };
 
@@ -210,22 +254,31 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
 
     setLoadingState(LoadingState.GeneratingFeedback);
     setError(null);
-    setFileUploadState(prev => ({ ...prev, isProcessing: true, error: null }));
+    setFileUploadState((prev) => ({
+      ...prev,
+      isProcessing: true,
+      error: null,
+    }));
 
     try {
-      const result = await processUploadedFilesForTeaching(ai, fileUploadState.files);
+      const result = await processUploadedFilesForTeaching(
+        ai,
+        fileUploadState.files,
+      );
       setRefinedScenario(result.refinedContent);
-      setCurrentStep('refined');
+      setCurrentStep("refined");
       setLoadingState(LoadingState.Done);
-      setFileUploadState(prev => ({ ...prev, isProcessing: false }));
+      setFileUploadState((prev) => ({ ...prev, isProcessing: false }));
     } catch (err) {
-      console.error('Error processing files:', err);
-      setError("An error occurred while processing your files. Please try again.");
+      console.error("Error processing files:", err);
+      setError(
+        "An error occurred while processing your files. Please try again.",
+      );
       setLoadingState(LoadingState.Error);
-      setFileUploadState(prev => ({ 
-        ...prev, 
-        isProcessing: false, 
-        error: err instanceof Error ? err.message : 'Unknown error' 
+      setFileUploadState((prev) => ({
+        ...prev,
+        isProcessing: false,
+        error: err instanceof Error ? err.message : "Unknown error",
       }));
     }
   };
@@ -233,34 +286,56 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
   const isLoading = loadingState === LoadingState.GeneratingFeedback;
 
   return (
-    <div className={`min-h-screen ${
-      theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'
-    }`}>
+    <div
+      className={`min-h-screen ${
+        theme === "dark" ? "bg-black text-white" : "bg-white text-black"
+      }`}
+    >
       {/* Header */}
-      <div className={`border-b p-6 ${
-        theme === 'dark' ? 'border-gray-800' : 'border-gray-200'
-      }`}>
+      <div
+        className={`border-b p-6 ${
+          theme === "dark" ? "border-gray-800" : "border-gray-200"
+        }`}
+      >
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <button 
+          <button
             onClick={onBack}
             className={`flex items-center transition-colors duration-200 ${
-              theme === 'dark' 
-                ? 'text-gray-400 hover:text-white' 
-                : 'text-gray-600 hover:text-black'
+              theme === "dark"
+                ? "text-gray-400 hover:text-white"
+                : "text-gray-600 hover:text-black"
             }`}
           >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg
+              className="w-5 h-5 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
             Back to Home
           </button>
           <div className="text-center">
-            <h1 className={`text-2xl font-semibold ${
-              theme === 'dark' ? 'text-white' : 'text-black'
-            }`}>Teacher Coach</h1>
-            <p className={`text-sm ${
-              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-            }`}>Test your teaching abilities with structured feedback</p>
+            <h1
+              className={`text-2xl font-semibold ${
+                theme === "dark" ? "text-white" : "text-black"
+              }`}
+            >
+              Teacher Coach
+            </h1>
+            <p
+              className={`text-sm ${
+                theme === "dark" ? "text-gray-400" : "text-gray-600"
+              }`}
+            >
+              Test your teaching abilities with structured feedback
+            </p>
           </div>
           <div className="w-20"></div> {/* Spacer for centering */}
         </div>
@@ -270,29 +345,51 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
         {/* Progress Steps */}
         <div className="mb-8">
           <div className="flex items-center justify-center space-x-4">
-            <div className={`flex items-center ${currentStep === 'input' ? 'text-white' : currentStep === 'refined' || currentStep === 'teaching' || currentStep === 'feedback' ? 'text-green-400' : 'text-gray-500'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === 'input' ? 'bg-white text-black' : currentStep === 'refined' || currentStep === 'teaching' || currentStep === 'feedback' ? 'bg-green-500 text-white' : 'bg-gray-700 text-gray-400'}`}>
+            <div
+              className={`flex items-center ${currentStep === "input" ? "text-white" : currentStep === "refined" || currentStep === "teaching" || currentStep === "feedback" ? "text-green-400" : "text-gray-500"}`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === "input" ? "bg-white text-black" : currentStep === "refined" || currentStep === "teaching" || currentStep === "feedback" ? "bg-green-500 text-white" : "bg-gray-700 text-gray-400"}`}
+              >
                 1
               </div>
               <span className="ml-2 text-sm">Input Scenario</span>
             </div>
-            <div className={`w-16 h-0.5 ${currentStep === 'refined' || currentStep === 'teaching' || currentStep === 'feedback' ? 'bg-green-500' : 'bg-gray-700'}`}></div>
-            <div className={`flex items-center ${currentStep === 'refined' ? 'text-white' : currentStep === 'teaching' || currentStep === 'feedback' ? 'text-green-400' : 'text-gray-500'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === 'refined' ? 'bg-white text-black' : currentStep === 'teaching' || currentStep === 'feedback' ? 'bg-green-500 text-white' : 'bg-gray-700 text-gray-400'}`}>
+            <div
+              className={`w-16 h-0.5 ${currentStep === "refined" || currentStep === "teaching" || currentStep === "feedback" ? "bg-green-500" : "bg-gray-700"}`}
+            ></div>
+            <div
+              className={`flex items-center ${currentStep === "refined" ? "text-white" : currentStep === "teaching" || currentStep === "feedback" ? "text-green-400" : "text-gray-500"}`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === "refined" ? "bg-white text-black" : currentStep === "teaching" || currentStep === "feedback" ? "bg-green-500 text-white" : "bg-gray-700 text-gray-400"}`}
+              >
                 2
               </div>
               <span className="ml-2 text-sm">Refined Topic</span>
             </div>
-            <div className={`w-16 h-0.5 ${currentStep === 'teaching' || currentStep === 'feedback' ? 'bg-green-500' : 'bg-gray-700'}`}></div>
-            <div className={`flex items-center ${currentStep === 'teaching' ? 'text-white' : currentStep === 'feedback' ? 'text-green-400' : 'text-gray-500'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === 'teaching' ? 'bg-white text-black' : currentStep === 'feedback' ? 'bg-green-500 text-white' : 'bg-gray-700 text-gray-400'}`}>
+            <div
+              className={`w-16 h-0.5 ${currentStep === "teaching" || currentStep === "feedback" ? "bg-green-500" : "bg-gray-700"}`}
+            ></div>
+            <div
+              className={`flex items-center ${currentStep === "teaching" ? "text-white" : currentStep === "feedback" ? "text-green-400" : "text-gray-500"}`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === "teaching" ? "bg-white text-black" : currentStep === "feedback" ? "bg-green-500 text-white" : "bg-gray-700 text-gray-400"}`}
+              >
                 3
               </div>
               <span className="ml-2 text-sm">Teach It</span>
             </div>
-            <div className={`w-16 h-0.5 ${currentStep === 'feedback' ? 'bg-green-500' : 'bg-gray-700'}`}></div>
-            <div className={`flex items-center ${currentStep === 'feedback' ? 'text-white' : 'text-gray-500'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === 'feedback' ? 'bg-white text-black' : 'bg-gray-700 text-gray-400'}`}>
+            <div
+              className={`w-16 h-0.5 ${currentStep === "feedback" ? "bg-green-500" : "bg-gray-700"}`}
+            ></div>
+            <div
+              className={`flex items-center ${currentStep === "feedback" ? "text-white" : "text-gray-500"}`}
+            >
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${currentStep === "feedback" ? "bg-white text-black" : "bg-gray-700 text-gray-400"}`}
+              >
                 4
               </div>
               <span className="ml-2 text-sm">Get Feedback</span>
@@ -301,42 +398,63 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
         </div>
 
         {/* Step 1: Input Scenario */}
-        {currentStep === 'input' && (
+        {currentStep === "input" && (
           <div className="space-y-8 animate-fade-in">
             {/* Header Section */}
             <div className="text-center mb-12">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 mb-6 group hover:scale-105 transition-all duration-300">
-                <svg className="w-8 h-8 text-blue-400 group-hover:text-blue-300 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                <svg
+                  className="w-8 h-8 text-blue-400 group-hover:text-blue-300 transition-colors duration-300"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                  />
                 </svg>
               </div>
-              <h2 className={`text-4xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent ${
-                theme === 'dark' ? 'text-white' : 'text-black'
-              }`}>
+              <h2
+                className={`text-4xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent ${
+                  theme === "dark" ? "text-white" : "text-black"
+                }`}
+              >
                 Choose Your Teaching Topic
               </h2>
-              <p className={`text-lg max-w-3xl mx-auto leading-relaxed ${
-                theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
-              }`}>
-                Select from our curated topics or create your own. Upload files to extract content, or type your own teaching material.
+              <p
+                className={`text-lg max-w-3xl mx-auto leading-relaxed ${
+                  theme === "dark" ? "text-gray-300" : "text-gray-600"
+                }`}
+              >
+                Select from our curated topics or create your own. Upload files
+                to extract content, or type your own teaching material.
               </p>
             </div>
 
             {/* Topic Selection Section */}
-            <div className={`rounded-2xl p-8 border backdrop-blur-sm transition-all duration-300 hover:shadow-2xl ${
-              theme === 'dark' 
-                ? 'bg-gray-800/40 border-gray-700/50 hover:border-gray-600/50' 
-                : 'bg-white/80 border-gray-200/50 hover:border-gray-300/50'
-            }`}>
+            <div
+              className={`rounded-2xl p-8 border backdrop-blur-sm transition-all duration-300 hover:shadow-2xl ${
+                theme === "dark"
+                  ? "bg-gray-800/40 border-gray-700/50 hover:border-gray-600/50"
+                  : "bg-white/80 border-gray-200/50 hover:border-gray-300/50"
+              }`}
+            >
               <div className="mb-6">
-                <h3 className={`text-xl font-semibold mb-2 ${
-                  theme === 'dark' ? 'text-white' : 'text-black'
-                }`}>
+                <h3
+                  className={`text-xl font-semibold mb-2 ${
+                    theme === "dark" ? "text-white" : "text-black"
+                  }`}
+                >
                   🎯 Quick Topic Selection
                 </h3>
-                <p className={`text-sm ${
-                  theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                }`}>
+                <p
+                  className={`text-sm ${
+                    theme === "dark" ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
                   Choose from our popular teaching topics or create your own
                 </p>
               </div>
@@ -349,31 +467,45 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                     onClick={() => handleTopicSelect(topic)}
                     className={`group relative p-4 rounded-xl border text-left transition-all duration-300 hover:scale-105 hover:shadow-lg ${
                       selectedTopic === topic
-                        ? 'border-blue-500 bg-blue-500/10 shadow-blue-500/20'
-                        : theme === 'dark'
-                        ? 'border-gray-700 bg-gray-800/50 hover:border-gray-600 hover:bg-gray-700/50'
-                        : 'border-gray-200 bg-gray-50/50 hover:border-gray-300 hover:bg-gray-100/50'
+                        ? "border-blue-500 bg-blue-500/10 shadow-blue-500/20"
+                        : theme === "dark"
+                          ? "border-gray-700 bg-gray-800/50 hover:border-gray-600 hover:bg-gray-700/50"
+                          : "border-gray-200 bg-gray-50/50 hover:border-gray-300 hover:bg-gray-100/50"
                     }`}
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                        selectedTopic === topic ? 'bg-blue-400' : 'bg-gray-400 group-hover:bg-gray-300'
-                      }`} />
-                      <span className={`text-sm font-medium transition-colors duration-300 ${
-                        selectedTopic === topic 
-                          ? 'text-blue-300' 
-                          : theme === 'dark' 
-                          ? 'text-gray-300 group-hover:text-white' 
-                          : 'text-gray-700 group-hover:text-black'
-                      }`}>
+                      <div
+                        className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                          selectedTopic === topic
+                            ? "bg-blue-400"
+                            : "bg-gray-400 group-hover:bg-gray-300"
+                        }`}
+                      />
+                      <span
+                        className={`text-sm font-medium transition-colors duration-300 ${
+                          selectedTopic === topic
+                            ? "text-blue-300"
+                            : theme === "dark"
+                              ? "text-gray-300 group-hover:text-white"
+                              : "text-gray-700 group-hover:text-black"
+                        }`}
+                      >
                         {topic}
                       </span>
                     </div>
                     {selectedTopic === topic && (
                       <div className="absolute top-2 right-2">
-                        <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        <svg
+                          className="w-4 h-4 text-blue-400"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
                         </svg>
                       </div>
                     )}
@@ -385,9 +517,11 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
               <div className="space-y-4">
                 <div className="flex items-center space-x-2 mb-4">
                   <div className="w-px h-4 bg-gray-400" />
-                  <span className={`text-sm font-medium ${
-                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                  }`}>
+                  <span
+                    className={`text-sm font-medium ${
+                      theme === "dark" ? "text-gray-400" : "text-gray-500"
+                    }`}
+                  >
                     OR CREATE YOUR OWN
                   </span>
                 </div>
@@ -397,16 +531,20 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                     value={userScenario}
                     onChange={(e) => setUserScenario(e.target.value)}
                     placeholder="Type your custom topic here or upload files to extract content..."
-                    className={`w-full h-32 p-4 pr-12 rounded-xl border transition-all duration-300 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 group-hover:shadow-lg ${
-                      theme === 'dark'
-                        ? 'bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500'
-                        : 'bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-blue-500'
+                    className={`w-full h-32 p-4 pr-24 rounded-none border-2 transition-all duration-300 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 group-hover:shadow-lg text-sm sm:text-base ${
+                      theme === "dark"
+                        ? "bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-gray-600"
+                        : "bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-gray-300"
                     }`}
                     disabled={isLoading}
                   />
-                  
-                  {/* File Upload Icon */}
-                  <div className="absolute top-4 right-4 group">
+
+                  {/* Voice Recorder and File Upload Icons */}
+                  <div className="absolute top-4 right-4 flex space-x-2">
+                    <CustomVoiceRecorder
+                      onTranscript={handleScenarioTranscript}
+                      disabled={isLoading}
+                    />
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -418,15 +556,25 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className={`p-2 rounded-lg transition-all duration-300 hover:scale-110 ${
-                        theme === 'dark'
-                          ? 'text-gray-400 hover:text-white hover:bg-gray-700'
-                          : 'text-gray-500 hover:text-black hover:bg-gray-200'
+                        theme === "dark"
+                          ? "text-gray-400 hover:text-white hover:bg-gray-700"
+                          : "text-gray-500 hover:text-black hover:bg-gray-200"
                       }`}
                       title="Upload files (images/PDFs)"
                       disabled={isLoading}
                     >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -435,35 +583,43 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                 {/* File List */}
                 {fileUploadState.files.length > 0 && (
                   <div className="space-y-3 animate-fade-in">
-                    <h4 className={`text-sm font-medium ${
-                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                    }`}>
+                    <h4
+                      className={`text-sm font-medium ${
+                        theme === "dark" ? "text-gray-300" : "text-gray-700"
+                      }`}
+                    >
                       📁 Uploaded Files:
                     </h4>
                     <div className="space-y-2">
                       {fileUploadState.files.map((file, index) => (
-                        <div 
-                          key={file.id} 
+                        <div
+                          key={file.id}
                           className={`flex items-center justify-between rounded-lg p-3 transition-all duration-300 hover:scale-102 ${
-                            theme === 'dark' 
-                              ? 'bg-gray-900/50 border border-gray-700' 
-                              : 'bg-gray-100/50 border border-gray-200'
+                            theme === "dark"
+                              ? "bg-gray-900/50 border border-gray-700"
+                              : "bg-gray-100/50 border border-gray-200"
                           }`}
                           style={{ animationDelay: `${index * 100}ms` }}
                         >
                           <div className="flex items-center space-x-3">
                             <div className="text-xl">
-                              {file.type.startsWith('image/') ? '🖼️' : '📄'}
+                              {file.type.startsWith("image/") ? "🖼️" : "📄"}
                             </div>
                             <div>
-                              <div className={`text-sm font-medium ${
-                                theme === 'dark' ? 'text-white' : 'text-black'
-                              }`}>
+                              <div
+                                className={`text-sm font-medium ${
+                                  theme === "dark" ? "text-white" : "text-black"
+                                }`}
+                              >
                                 {file.name}
                               </div>
-                              <div className={`text-xs ${
-                                theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                              }`}>
+                              <div
+                                className={`text-xs ${
+                                  theme === "dark"
+                                    ? "text-gray-400"
+                                    : "text-gray-500"
+                                }`}
+                              >
                                 {(file.size / 1024 / 1024).toFixed(2)} MB
                               </div>
                             </div>
@@ -473,8 +629,18 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                             className="text-red-400 hover:text-red-300 transition-all duration-300 p-1 hover:scale-110 rounded"
                             disabled={isLoading}
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M6 18L18 6M6 6l12 12"
+                              />
                             </svg>
                           </button>
                         </div>
@@ -493,12 +659,21 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                 {/* Submit Button */}
                 <div className="text-center pt-6">
                   <button
-                    onClick={fileUploadState.files.length > 0 ? handleFileSubmit : handleScenarioSubmit}
-                    disabled={isLoading || (fileUploadState.files.length === 0 && !userScenario.trim()) || fileUploadState.isProcessing}
+                    onClick={
+                      fileUploadState.files.length > 0
+                        ? handleFileSubmit
+                        : handleScenarioSubmit
+                    }
+                    disabled={
+                      isLoading ||
+                      (fileUploadState.files.length === 0 &&
+                        !userScenario.trim()) ||
+                      fileUploadState.isProcessing
+                    }
                     className={`group relative px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed ${
-                      theme === 'dark'
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600'
-                        : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700'
+                      theme === "dark"
+                        ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600"
+                        : "bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700"
                     }`}
                   >
                     <span className="relative z-10 flex items-center space-x-2">
@@ -506,16 +681,30 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                         <>
                           <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
                           <span>
-                            {fileUploadState.files.length > 0 ? 'Processing Files...' : 'Refining...'}
+                            {fileUploadState.files.length > 0
+                              ? "Processing Files..."
+                              : "Refining..."}
                           </span>
                         </>
                       ) : (
                         <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 10V3L4 14h7v7l9-11h-7z"
+                            />
                           </svg>
                           <span>
-                            {fileUploadState.files.length > 0 ? 'Extract & Refine Content' : 'Refine My Topic'}
+                            {fileUploadState.files.length > 0
+                              ? "Extract & Refine Content"
+                              : "Refine My Topic"}
                           </span>
                         </>
                       )}
@@ -529,83 +718,116 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
         )}
 
         {/* Step 2: Refined Scenario */}
-        {currentStep === 'refined' && (
+        {currentStep === "refined" && (
           <div className="space-y-8 animate-fade-in">
             {/* Header Section */}
             <div className="text-center mb-12">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500/20 to-blue-500/20 border border-green-500/30 mb-6 group hover:scale-105 transition-all duration-300">
-                <svg className="w-8 h-8 text-green-400 group-hover:text-green-300 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-8 h-8 text-green-400 group-hover:text-green-300 transition-colors duration-300"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
               </div>
-              <h2 className={`text-4xl font-bold mb-4 bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent ${
-                theme === 'dark' ? 'text-white' : 'text-black'
-              }`}>
+              <h2
+                className={`text-4xl font-bold mb-4 bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent ${
+                  theme === "dark" ? "text-white" : "text-black"
+                }`}
+              >
                 Refined Teaching Material
               </h2>
-              <p className={`text-lg max-w-3xl mx-auto leading-relaxed ${
-                theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
-              }`}>
-                Your topic has been optimized for teaching. Review, edit, and customize the content before you start teaching.
+              <p
+                className={`text-lg max-w-3xl mx-auto leading-relaxed ${
+                  theme === "dark" ? "text-gray-300" : "text-gray-600"
+                }`}
+              >
+                Your topic has been optimized for teaching. Review, edit, and
+                customize the content before you start teaching.
               </p>
             </div>
 
             {/* Editable Content Section */}
-            <div className={`rounded-2xl p-8 border backdrop-blur-sm transition-all duration-300 hover:shadow-2xl ${
-              theme === 'dark' 
-                ? 'bg-gray-800/40 border-gray-700/50 hover:border-gray-600/50' 
-                : 'bg-white/80 border-gray-200/50 hover:border-gray-300/50'
-            }`}>
+            <div
+              className={`rounded-2xl p-8 border backdrop-blur-sm transition-all duration-300 hover:shadow-2xl ${
+                theme === "dark"
+                  ? "bg-gray-800/40 border-gray-700/50 hover:border-gray-600/50"
+                  : "bg-white/80 border-gray-200/50 hover:border-gray-300/50"
+              }`}
+            >
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className={`text-xl font-semibold mb-2 ${
-                    theme === 'dark' ? 'text-white' : 'text-black'
-                  }`}>
+                  <h3
+                    className={`text-xl font-semibold mb-2 ${
+                      theme === "dark" ? "text-white" : "text-black"
+                    }`}
+                  >
                     📝 Teaching Content
                   </h3>
-                  <p className={`text-sm ${
-                    theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                  }`}>
+                  <p
+                    className={`text-sm ${
+                      theme === "dark" ? "text-gray-400" : "text-gray-600"
+                    }`}
+                  >
                     Click to edit and customize your teaching material
                   </p>
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
-                    onClick={() => setCurrentStep('input')}
+                    onClick={() => setCurrentStep("input")}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 ${
-                      theme === 'dark'
-                        ? 'text-gray-400 hover:text-white hover:bg-gray-700'
-                        : 'text-gray-600 hover:text-black hover:bg-gray-200'
+                      theme === "dark"
+                        ? "text-gray-400 hover:text-white hover:bg-gray-700"
+                        : "text-gray-600 hover:text-black hover:bg-gray-200"
                     }`}
                   >
-                    <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    <svg
+                      className="w-4 h-4 inline mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
                     </svg>
                     Edit Topic
                   </button>
                 </div>
               </div>
-              
+
               {/* Editable Content Area */}
               <div className="relative group">
                 <textarea
                   value={refinedScenario}
                   onChange={(e) => setRefinedScenario(e.target.value)}
-                  className={`w-full min-h-[400px] p-6 rounded-xl border transition-all duration-300 resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 group-hover:shadow-lg ${
-                    theme === 'dark'
-                      ? 'bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-green-500'
-                      : 'bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-green-500'
+                  className={`w-full min-h-[400px] p-6 rounded-none border-2 transition-all duration-300 resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 group-hover:shadow-lg text-sm sm:text-base ${
+                    theme === "dark"
+                      ? "bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-gray-600"
+                      : "bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-gray-300"
                   }`}
                   placeholder="Your refined teaching content will appear here..."
                 />
-                
+
                 {/* Edit Indicator */}
                 <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    theme === 'dark' 
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                      : 'bg-green-100 text-green-700 border border-green-200'
-                  }`}>
+                  <div
+                    className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      theme === "dark"
+                        ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                        : "bg-green-100 text-green-700 border border-green-200"
+                    }`}
+                  >
                     ✏️ Editable
                   </div>
                 </div>
@@ -614,29 +836,51 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
               {/* Action Buttons */}
               <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-700/50">
                 <div className="flex items-center space-x-4">
-                  <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg ${
-                    theme === 'dark' 
-                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' 
-                      : 'bg-blue-100 text-blue-700 border border-blue-200'
-                  }`}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <div
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg ${
+                      theme === "dark"
+                        ? "bg-blue-500/10 text-blue-400 border border-blue-500/30"
+                        : "bg-blue-100 text-blue-700 border border-blue-200"
+                    }`}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                     <span className="text-sm font-medium">Ready to Teach</span>
                   </div>
                 </div>
-                
+
                 <button
-                  onClick={() => setCurrentStep('teaching')}
+                  onClick={() => setCurrentStep("teaching")}
                   className={`group relative px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl ${
-                    theme === 'dark'
-                      ? 'bg-gradient-to-r from-green-500 to-blue-500 text-white hover:from-green-600 hover:to-blue-600'
-                      : 'bg-gradient-to-r from-green-600 to-blue-600 text-white hover:from-green-700 hover:to-blue-700'
+                    theme === "dark"
+                      ? "bg-gradient-to-r from-green-500 to-blue-500 text-white hover:from-green-600 hover:to-blue-600"
+                      : "bg-gradient-to-r from-green-600 to-blue-600 text-white hover:from-green-700 hover:to-blue-700"
                   }`}
                 >
                   <span className="relative z-10 flex items-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                      />
                     </svg>
                     <span>Start Teaching</span>
                   </span>
@@ -648,20 +892,27 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
         )}
 
         {/* Step 3: Teaching */}
-        {currentStep === 'teaching' && (
+        {currentStep === "teaching" && (
           <div className="space-y-6">
             <div className="text-center mb-8">
-              <h2 className="text-3xl font-semibold text-white mb-4">Step 3: Teach Your Topic</h2>
+              <h2 className="text-3xl font-semibold text-white mb-4">
+                Step 3: Teach Your Topic
+              </h2>
               <p className="text-gray-400 max-w-2xl mx-auto">
-                Now explain the topic above as if you're teaching it to someone who has never heard of it before. 
-                Be clear, engaging, and thorough in your explanation.
+                Now explain the topic above as if you're teaching it to someone
+                who has never heard of it before. Be clear, engaging, and
+                thorough in your explanation.
               </p>
             </div>
 
             <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 mb-6">
-              <h3 className="text-lg font-semibold text-white mb-3">Topic to Teach:</h3>
+              <h3 className="text-lg font-semibold text-white mb-3">
+                Topic to Teach:
+              </h3>
               <div className="bg-gray-900/50 rounded-lg p-4">
-                <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">{refinedScenario}</p>
+                <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">
+                  {refinedScenario}
+                </p>
               </div>
             </div>
 
@@ -672,7 +923,16 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                 </label>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setTeachingChapters(prev => [...prev, { id: Math.random().toString(36).substr(2,9), title: '', content: '' }])}
+                    onClick={() =>
+                      setTeachingChapters((prev) => [
+                        ...prev,
+                        {
+                          id: Math.random().toString(36).substr(2, 9),
+                          title: "",
+                          content: "",
+                        },
+                      ])
+                    }
                     className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium hover:bg-gray-100"
                     disabled={isLoading}
                   >
@@ -691,40 +951,65 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
               </div>
 
               {teachingChapters.length === 0 && (
-                <textarea
-                  value={userTeaching}
-                  onChange={(e) => setUserTeaching(e.target.value)}
-                  placeholder="Explain the topic above as if you're teaching it to a student. Be clear, engaging, and comprehensive... Or click 'Add Chapter' to structure your explanation."
-                  className="w-full h-48 p-4 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-white/50 resize-none"
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <textarea
+                    value={userTeaching}
+                    onChange={(e) => setUserTeaching(e.target.value)}
+                    placeholder="Explain the topic above as if you're teaching it to a student. Be clear, engaging, and comprehensive... Or click 'Add Chapter' to structure your explanation."
+                    className="w-full h-48 p-4 pr-12 bg-gray-800 border-2 border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-gray-600 resize-none transition-all duration-200 text-sm sm:text-base"
+                    disabled={isLoading}
+                  />
+                  <div className="absolute top-4 right-4">
+                    <CustomVoiceRecorder
+                      onTranscript={handleTeachingTranscript}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
               )}
 
               {teachingChapters.length > 0 && (
                 <div className="space-y-4">
                   {teachingChapters.map((ch, idx) => (
-                    <div key={ch.id} className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                    <div
+                      key={ch.id}
+                      className="rounded-lg border border-gray-700 bg-gray-900/40 p-4"
+                    >
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400">Chapter {idx + 1}</span>
+                          <span className="text-xs text-gray-400">
+                            Chapter {idx + 1}
+                          </span>
                           <input
                             value={ch.title}
-                            onChange={(e) => setTeachingChapters(prev => prev.map((c, i) => i === idx ? { ...c, title: e.target.value } : c))}
+                            onChange={(e) =>
+                              setTeachingChapters((prev) =>
+                                prev.map((c, i) =>
+                                  i === idx
+                                    ? { ...c, title: e.target.value }
+                                    : c,
+                                ),
+                              )
+                            }
                             placeholder="Chapter title (e.g., Introduction to Photosynthesis)"
-                            className="px-3 py-2 rounded bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
+                            className="px-3 py-2 rounded-none bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
                             disabled={isLoading}
                           />
                         </div>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setActiveChapterIndex(idx)}
-                            className={`px-2.5 py-1 text-xs rounded border ${activeChapterIndex === idx ? 'bg-white text-black border-white' : 'text-white border-gray-600 hover:bg-gray-700'}`}
+                            className={`px-2.5 py-1 text-xs rounded border ${activeChapterIndex === idx ? "bg-white text-black border-white" : "text-white border-gray-600 hover:bg-gray-700"}`}
                             disabled={isLoading}
                           >
                             Focus
                           </button>
                           <button
-                            onClick={() => setTeachingChapters(prev => prev.filter((_, i) => i !== idx))}
+                            onClick={() =>
+                              setTeachingChapters((prev) =>
+                                prev.filter((_, i) => i !== idx),
+                              )
+                            }
                             className="px-2.5 py-1 text-xs rounded border border-red-700 text-red-300 hover:bg-red-900/30"
                             disabled={isLoading}
                           >
@@ -732,13 +1017,31 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                           </button>
                         </div>
                       </div>
-                      <textarea
-                        value={ch.content}
-                        onChange={(e) => setTeachingChapters(prev => prev.map((c, i) => i === idx ? { ...c, content: e.target.value } : c))}
-                        placeholder="Write this chapter's explanation here..."
-                        className={`w-full h-40 p-3 rounded bg-gray-800 border ${activeChapterIndex === idx ? 'border-white/50' : 'border-gray-700'} text-white placeholder-gray-500 focus:outline-none focus:border-white/60 resize-none`}
-                        disabled={isLoading}
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={ch.content}
+                          onChange={(e) =>
+                            setTeachingChapters((prev) =>
+                              prev.map((c, i) =>
+                                i === idx
+                                  ? { ...c, content: e.target.value }
+                                  : c,
+                              ),
+                            )
+                          }
+                          placeholder="Write this chapter's explanation here..."
+                          className={`w-full h-40 p-3 pr-12 rounded-none bg-gray-800 border ${activeChapterIndex === idx ? "border-white/50" : "border-gray-700"} text-white placeholder-gray-500 focus:outline-none focus:border-white/60 resize-none`}
+                          disabled={isLoading}
+                        />
+                        <div className="absolute top-3 right-3">
+                          <CustomVoiceRecorder
+                            onTranscript={(text) =>
+                              handleChapterTranscript(text, ch.id)
+                            }
+                            disabled={isLoading}
+                          />
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -748,37 +1051,47 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
             <div className="text-center">
               <button
                 onClick={handleTeachingSubmit}
-                disabled={isLoading || (teachingChapters.length === 0 && !userTeaching.trim())}
+                disabled={
+                  isLoading ||
+                  (teachingChapters.length === 0 && !userTeaching.trim())
+                }
                 className="px-8 py-3 bg-white text-black rounded-lg font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
               >
-                {isLoading ? 'Evaluating...' : 'Get Teaching Feedback'}
+                {isLoading ? "Evaluating..." : "Get Teaching Feedback"}
               </button>
             </div>
           </div>
         )}
 
         {/* Step 4: Feedback */}
-        {currentStep === 'feedback' && feedback && (
+        {currentStep === "feedback" && feedback && (
           <div className="space-y-6">
             <div className="text-center mb-8">
-              <h2 className="text-3xl font-semibold text-white mb-4">Your Teaching Performance</h2>
+              <h2 className="text-3xl font-semibold text-white mb-4">
+                Your Teaching Performance
+              </h2>
               <p className="text-gray-400 max-w-2xl mx-auto">
-                Here's how well you explained your topic. The Teacher AI has evaluated your clarity, 
-                coherence, and creativity in teaching.
+                Here's how well you explained your topic. The Teacher AI has
+                evaluated your clarity, coherence, and creativity in teaching.
               </p>
             </div>
 
             {/* Overall Score */}
             <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300">
               <div className="flex items-center justify-center mb-6">
-                <h3 className="text-xl font-semibold text-white">Overall Teaching Score</h3>
+                <h3 className="text-xl font-semibold text-white">
+                  Overall Teaching Score
+                </h3>
               </div>
               <div className="flex justify-center">
                 <div className="relative w-32 h-32 group">
                   {/* Glow effect */}
                   <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500/20 to-green-500/20 blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                  
-                  <svg className="w-32 h-32 transform -rotate-90 relative z-10" viewBox="0 0 36 36">
+
+                  <svg
+                    className="w-32 h-32 transform -rotate-90 relative z-10"
+                    viewBox="0 0 36 36"
+                  >
                     <path
                       className="text-gray-700"
                       stroke="currentColor"
@@ -802,7 +1115,9 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center z-10">
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-white animate-pulse">{feedback.overall_score}</div>
+                      <div className="text-3xl font-bold text-white animate-pulse">
+                        {feedback.overall_score}
+                      </div>
                       <div className="text-sm text-gray-400">/100</div>
                     </div>
                   </div>
@@ -812,99 +1127,127 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
 
             {/* Category Scores */}
             <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700">
-              <h3 className="text-xl font-semibold text-white mb-6 text-center">Individual Category Performance (0-20 each)</h3>
+              <h3 className="text-xl font-semibold text-white mb-6 text-center">
+                Individual Category Performance (0-20 each)
+              </h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                {Object.entries(feedback.category_scores).map(([category, score], index) => {
-                  const categoryNames: { [key: string]: string } = {
-                    clarity: 'Clarity & Explanation',
-                    structure: 'Structure & Organization',
-                    engagement: 'Engagement & Interest',
-                    educationalValue: 'Educational Value',
-                    accessibility: 'Accessibility & Adaptability',
-                    completeness: 'Completeness & Depth',
-                    // Legacy support
-                    vocabulary: 'Vocabulary Richness',
-                    grammar: 'Grammar Accuracy',
-                    logic: 'Logic & Coherence',
-                    fluency: 'Fluency',
-                    creativity: 'Creativity'
-                  };
-                  
-                  const percentage = (Number(score) / 20) * 100;
-                  const colors = [
-                    'text-blue-400',
-                    'text-green-400', 
-                    'text-purple-400',
-                    'text-yellow-400',
-                    'text-red-400',
-                    'text-pink-400'
-                  ];
-                  const color = colors[index % colors.length];
-                  
-                  return (
-                    <div key={category} className="flex flex-col items-center group cursor-pointer">
-                      <div className="relative w-20 h-20 mb-3 group-hover:scale-110 transition-transform duration-300">
-                        {/* Glow effect on hover */}
-                        <div className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-300 ${color.replace('text-', 'bg-')} blur-sm`}></div>
-                        
-                        <svg className="w-20 h-20 transform -rotate-90 relative z-10" viewBox="0 0 36 36">
-                          <path
-                            className="text-gray-700"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            fill="none"
-                            d="M18 2.0845
+                {Object.entries(feedback.category_scores).map(
+                  ([category, score], index) => {
+                    const categoryNames: { [key: string]: string } = {
+                      clarity: "Clarity & Explanation",
+                      structure: "Structure & Organization",
+                      engagement: "Engagement & Interest",
+                      educationalValue: "Educational Value",
+                      accessibility: "Accessibility & Adaptability",
+                      completeness: "Completeness & Depth",
+                      // Legacy support
+                      vocabulary: "Vocabulary Richness",
+                      grammar: "Grammar Accuracy",
+                      logic: "Logic & Coherence",
+                      fluency: "Fluency",
+                      creativity: "Creativity",
+                    };
+
+                    const percentage = (Number(score) / 20) * 100;
+                    const colors = [
+                      "text-blue-400",
+                      "text-green-400",
+                      "text-purple-400",
+                      "text-yellow-400",
+                      "text-red-400",
+                      "text-pink-400",
+                    ];
+                    const color = colors[index % colors.length];
+
+                    return (
+                      <div
+                        key={category}
+                        className="flex flex-col items-center group cursor-pointer"
+                      >
+                        <div className="relative w-20 h-20 mb-3 group-hover:scale-110 transition-transform duration-300">
+                          {/* Glow effect on hover */}
+                          <div
+                            className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-300 ${color.replace("text-", "bg-")} blur-sm`}
+                          ></div>
+
+                          <svg
+                            className="w-20 h-20 transform -rotate-90 relative z-10"
+                            viewBox="0 0 36 36"
+                          >
+                            <path
+                              className="text-gray-700"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              fill="none"
+                              d="M18 2.0845
                               a 15.9155 15.9155 0 0 1 0 31.831
                               a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          <path
-                            className={`${color} transition-all duration-2000 ease-out drop-shadow-sm`}
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            fill="none"
-                            strokeDasharray={`${percentage}, 100`}
-                            style={{ animationDelay: `${index * 200}ms` }}
-                            d="M18 2.0845
+                            />
+                            <path
+                              className={`${color} transition-all duration-2000 ease-out drop-shadow-sm`}
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              fill="none"
+                              strokeDasharray={`${percentage}, 100`}
+                              style={{ animationDelay: `${index * 200}ms` }}
+                              d="M18 2.0845
                               a 15.9155 15.9155 0 0 1 0 31.831
                               a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center z-10">
-                          <div className="text-lg font-bold text-white group-hover:text-gray-100 transition-colors duration-300">{score}</div>
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center z-10">
+                            <div className="text-lg font-bold text-white group-hover:text-gray-100 transition-colors duration-300">
+                              {score}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-center group-hover:scale-105 transition-transform duration-300">
+                          <div className="text-sm font-medium text-white group-hover:text-gray-100 transition-colors duration-300">
+                            {categoryNames[category] || category}
+                          </div>
+                          <div className="text-xs text-gray-400">/20</div>
                         </div>
                       </div>
-                      <div className="text-center group-hover:scale-105 transition-transform duration-300">
-                        <div className="text-sm font-medium text-white group-hover:text-gray-100 transition-colors duration-300">{categoryNames[category] || category}</div>
-                        <div className="text-xs text-gray-400">/20</div>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  },
+                )}
               </div>
             </div>
 
             {/* Teacher Feedback */}
             <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300 hover:shadow-lg hover:shadow-white/5">
-              <h3 className="text-xl font-semibold text-white mb-4">Teacher's Assessment</h3>
-              <p className="text-gray-300 leading-relaxed mb-4">{feedback.feedback}</p>
-              
+              <h3 className="text-xl font-semibold text-white mb-4">
+                Teacher's Assessment
+              </h3>
+              <p className="text-gray-300 leading-relaxed mb-4">
+                {feedback.feedback}
+              </p>
+
               <div className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-white mb-2">Teaching Strengths:</h4>
+                  <h4 className="font-medium text-white mb-2">
+                    Teaching Strengths:
+                  </h4>
                   <p className="text-gray-300">{feedback.whatYouDidWell}</p>
                 </div>
-                
+
                 <div>
-                  <h4 className="font-medium text-white mb-2">Areas to Improve:</h4>
-                  <p className="text-gray-300">{feedback.areasForImprovement}</p>
+                  <h4 className="font-medium text-white mb-2">
+                    Areas to Improve:
+                  </h4>
+                  <p className="text-gray-300">
+                    {feedback.areasForImprovement}
+                  </p>
                 </div>
               </div>
             </div>
 
             {/* Improvement Tips */}
             <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300 hover:shadow-lg hover:shadow-white/5">
-              <h3 className="text-xl font-semibold text-white mb-4">Personalized Teaching Recommendations</h3>
+              <h3 className="text-xl font-semibold text-white mb-4">
+                Personalized Teaching Recommendations
+              </h3>
               <ul className="space-y-3">
                 {feedback.tips.map((tip, index) => (
                   <li key={index} className="flex items-start">
@@ -918,27 +1261,49 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
             {/* Detailed Teaching Analysis */}
             {feedback.teachingAnalysis && (
               <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300 hover:shadow-lg hover:shadow-white/5">
-                <h3 className="text-xl font-semibold text-white mb-4">Detailed Teaching Analysis</h3>
+                <h3 className="text-xl font-semibold text-white mb-4">
+                  Detailed Teaching Analysis
+                </h3>
                 <div className="space-y-4">
                   <div>
-                    <h4 className="font-medium text-white mb-2">Your Strongest Teaching Moment:</h4>
-                    <p className="text-gray-300 italic">"{feedback.teachingAnalysis.strongestMoment}"</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Your Strongest Teaching Moment:
+                    </h4>
+                    <p className="text-gray-300 italic">
+                      "{feedback.teachingAnalysis.strongestMoment}"
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Your Weakest Teaching Moment:</h4>
-                    <p className="text-gray-300 italic">"{feedback.teachingAnalysis.weakestMoment}"</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Your Weakest Teaching Moment:
+                    </h4>
+                    <p className="text-gray-300 italic">
+                      "{feedback.teachingAnalysis.weakestMoment}"
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Best Explanation Technique:</h4>
-                    <p className="text-gray-300 italic">"{feedback.teachingAnalysis.bestExplanation}"</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Best Explanation Technique:
+                    </h4>
+                    <p className="text-gray-300 italic">
+                      "{feedback.teachingAnalysis.bestExplanation}"
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Missed Teaching Opportunities:</h4>
-                    <p className="text-gray-300">{feedback.teachingAnalysis.missedOpportunities}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Missed Teaching Opportunities:
+                    </h4>
+                    <p className="text-gray-300">
+                      {feedback.teachingAnalysis.missedOpportunities}
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Audience Adaptation:</h4>
-                    <p className="text-gray-300">{feedback.teachingAnalysis.audienceAdaptation}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Audience Adaptation:
+                    </h4>
+                    <p className="text-gray-300">
+                      {feedback.teachingAnalysis.audienceAdaptation}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -947,19 +1312,33 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
             {/* Communication Profile */}
             {feedback.communicationBehavior && (
               <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300 hover:shadow-lg hover:shadow-white/5">
-                <h3 className="text-xl font-semibold text-white mb-4">Your Teaching Style</h3>
+                <h3 className="text-xl font-semibold text-white mb-4">
+                  Your Teaching Style
+                </h3>
                 <div className="space-y-4">
                   <div>
-                    <h4 className="font-medium text-white mb-2">Teaching Profile:</h4>
-                    <p className="text-gray-300">{feedback.communicationBehavior.profile}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Teaching Profile:
+                    </h4>
+                    <p className="text-gray-300">
+                      {feedback.communicationBehavior.profile}
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Key Strength:</h4>
-                    <p className="text-gray-300">{feedback.communicationBehavior.strength}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Key Strength:
+                    </h4>
+                    <p className="text-gray-300">
+                      {feedback.communicationBehavior.strength}
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Growth Area:</h4>
-                    <p className="text-gray-300">{feedback.communicationBehavior.growthArea}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Growth Area:
+                    </h4>
+                    <p className="text-gray-300">
+                      {feedback.communicationBehavior.growthArea}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -968,19 +1347,33 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
             {/* Example Rewrite */}
             {feedback.exampleRewrite && (
               <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300 hover:shadow-lg hover:shadow-white/5">
-                <h3 className="text-xl font-semibold text-white mb-4">Example Teaching Improvement</h3>
+                <h3 className="text-xl font-semibold text-white mb-4">
+                  Example Teaching Improvement
+                </h3>
                 <div className="space-y-4">
                   <div>
-                    <h4 className="font-medium text-white mb-2">Your Version:</h4>
-                    <p className="text-gray-300 bg-gray-900/50 p-3 rounded">{feedback.exampleRewrite.original}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Your Version:
+                    </h4>
+                    <p className="text-gray-300 bg-gray-900/50 p-3 rounded">
+                      {feedback.exampleRewrite.original}
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Improved Teaching:</h4>
-                    <p className="text-gray-300 bg-gray-900/50 p-3 rounded">{feedback.exampleRewrite.improved}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Improved Teaching:
+                    </h4>
+                    <p className="text-gray-300 bg-gray-900/50 p-3 rounded">
+                      {feedback.exampleRewrite.improved}
+                    </p>
                   </div>
                   <div>
-                    <h4 className="font-medium text-white mb-2">Why This Works Better:</h4>
-                    <p className="text-gray-300">{feedback.exampleRewrite.reasoning}</p>
+                    <h4 className="font-medium text-white mb-2">
+                      Why This Works Better:
+                    </h4>
+                    <p className="text-gray-300">
+                      {feedback.exampleRewrite.reasoning}
+                    </p>
                   </div>
                 </div>
               </div>

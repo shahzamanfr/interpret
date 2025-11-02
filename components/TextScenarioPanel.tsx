@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TextScenario } from '../types';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface TextScenarioPanelProps {
   selectedScenario: TextScenario | null;
@@ -63,6 +64,7 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
   onSubmit,
   isLoading
 }) => {
+  const { theme } = useTheme();
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
 
@@ -93,18 +95,32 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
               disabled={isLoading}
               className={`p-4 rounded-lg border text-left transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
                 ${selectedScenario?.id === scenario.id
-                  ? 'border-gray-600 bg-gray-800/50'
-                  : 'border-gray-800 bg-gray-900/30 hover:bg-gray-800/40 hover:border-gray-700'
+                  ? theme === 'dark'
+                    ? 'border-gray-600 bg-gray-800/50'
+                    : 'border-blue-500 bg-blue-50'
+                  : theme === 'dark'
+                    ? 'border-gray-800 bg-gray-900/30 hover:bg-gray-800/40 hover:border-gray-700'
+                    : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400'
                 }`}
             >
               <div className="flex items-start justify-between mb-2">
-                <h3 className="text-white font-semibold">{scenario.title}</h3>
-                <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-full">
+                <h3 className={`font-semibold ${
+                  theme === 'dark' ? 'text-white' : 'text-black'
+                }`}>{scenario.title}</h3>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  theme === 'dark'
+                    ? 'text-gray-400 bg-gray-800'
+                    : 'text-gray-900 bg-gray-200'
+                }`}>
                   {scenario.category}
                 </span>
               </div>
-              <p className="text-gray-400 text-sm mb-3">{scenario.description}</p>
-              <p className="text-gray-300 text-sm italic">"{scenario.prompt}"</p>
+              <p className={`text-sm mb-3 ${
+                theme === 'dark' ? 'text-gray-400' : 'text-gray-900'
+              }`}>{scenario.description}</p>
+              <p className={`text-sm italic ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
+              }`}>"{scenario.prompt}"</p>
             </button>
           ))}
           
@@ -112,16 +128,30 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
           <button
             onClick={() => setShowCustomPrompt(true)}
             disabled={isLoading}
-            className="p-4 rounded-lg border border-gray-800 bg-gray-900/30 hover:bg-gray-800/40 hover:border-gray-700 text-left transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`p-4 rounded-lg border text-left transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+              theme === 'dark'
+                ? 'border-gray-800 bg-gray-900/30 hover:bg-gray-800/40 hover:border-gray-700'
+                : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400'
+            }`}
           >
             <div className="flex items-start justify-between mb-2">
-              <h3 className="text-white font-semibold">Custom Prompt</h3>
-              <span className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded-full">
+              <h3 className={`font-semibold ${
+                theme === 'dark' ? 'text-white' : 'text-black'
+              }`}>Custom Prompt</h3>
+              <span className={`text-xs px-2 py-1 rounded-full ${
+                theme === 'dark'
+                  ? 'text-gray-400 bg-gray-800'
+                  : 'text-gray-600 bg-gray-200'
+              }`}>
                 Custom
               </span>
             </div>
-            <p className="text-gray-400 text-sm mb-3">Create your own scenario</p>
-            <p className="text-gray-300 text-sm italic">"Write your own prompt here..."</p>
+            <p className={`text-sm mb-3 ${
+              theme === 'dark' ? 'text-gray-400' : 'text-gray-900'
+            }`}>Create your own scenario</p>
+            <p className={`text-sm italic ${
+              theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
+            }`}>"Write your own prompt here..."</p>
           </button>
         </div>
       </div>
@@ -129,25 +159,43 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
       {/* Custom Prompt Modal */}
       {showCustomPrompt && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-2xl">
-            <h3 className="text-xl font-semibold text-white mb-4">Create Custom Prompt</h3>
+          <div className={`border rounded-lg p-6 w-full max-w-2xl ${
+            theme === 'dark' 
+              ? 'bg-gray-900 border-gray-800' 
+              : 'bg-white border-gray-200'
+          }`}>
+            <h3 className={`text-xl font-semibold mb-4 ${
+              theme === 'dark' ? 'text-white' : 'text-black'
+            }`}>Create Custom Prompt</h3>
             <textarea
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}
               placeholder="Enter your custom prompt or scenario here..."
-              className="w-full h-32 p-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 placeholder-gray-500 focus:ring-1 focus:ring-gray-600 focus:border-gray-600"
+              className={`w-full h-32 p-4 border rounded-lg focus:ring-1 focus:ring-gray-600 focus:border-gray-600 ${
+                theme === 'dark'
+                  ? 'bg-gray-800 border-gray-700 text-gray-300 placeholder-gray-500'
+                  : 'bg-white border-gray-300 text-black placeholder-gray-400'
+              }`}
             />
             <div className="flex justify-end space-x-3 mt-4">
               <button
                 onClick={() => setShowCustomPrompt(false)}
-                className="px-4 py-2 text-gray-400 hover:text-gray-300 transition-colors"
+                className={`px-4 py-2 transition-colors ${
+                  theme === 'dark'
+                    ? 'text-gray-400 hover:text-gray-300'
+                    : 'text-gray-900 hover:text-black'
+                }`}
               >
                 Cancel
               </button>
               <button
                 onClick={handleCustomSubmit}
                 disabled={!customPrompt.trim()}
-                className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className={`px-6 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gray-800 text-white hover:bg-gray-700'
+                    : 'bg-black text-white hover:bg-gray-900'
+                }`}
               >
                 Use Prompt
               </button>
@@ -158,23 +206,41 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
 
       {/* Selected Scenario Display */}
       {selectedScenario && (
-        <div className="bg-gray-900/50 rounded-lg p-6 border border-gray-800">
+        <div className={`rounded-lg p-6 border ${
+          theme === 'dark'
+            ? 'bg-gray-900/50 border-gray-800'
+            : 'bg-gray-50 border-gray-300'
+        }`}>
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h3 className="text-xl font-semibold text-white">{selectedScenario.title}</h3>
-              <p className="text-gray-400 text-sm">{selectedScenario.description}</p>
+              <h3 className={`text-xl font-semibold ${
+                theme === 'dark' ? 'text-white' : 'text-black'
+              }`}>{selectedScenario.title}</h3>
+              <p className={`text-sm ${
+                theme === 'dark' ? 'text-gray-400' : 'text-gray-900'
+              }`}>{selectedScenario.description}</p>
             </div>
-            <span className="text-xs text-gray-400 bg-gray-800 px-3 py-1 rounded-full">
+            <span className={`text-xs px-3 py-1 rounded-full ${
+              theme === 'dark'
+                ? 'text-gray-400 bg-gray-800'
+                : 'text-gray-600 bg-gray-200'
+            }`}>
               {selectedScenario.category}
             </span>
           </div>
-          <div className="bg-gray-800/50 rounded-lg p-4 mb-6">
-            <p className="text-gray-300 italic">"{selectedScenario.prompt}"</p>
+          <div className={`rounded-lg p-4 mb-6 ${
+            theme === 'dark' ? 'bg-gray-800/50' : 'bg-white border border-gray-300'
+          }`}>
+            <p className={`italic ${
+              theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
+            }`}>"{selectedScenario.prompt}"</p>
           </div>
           
           {/* Text Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className={`block text-sm font-medium mb-2 ${
+              theme === 'dark' ? 'text-gray-300' : 'text-gray-900'
+            }`}>
               Your Response
             </label>
             <textarea
@@ -182,7 +248,11 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
               onChange={(e) => onUserTextChange(e.target.value)}
               placeholder="Write your response here..."
               disabled={isLoading}
-              className="w-full h-40 p-4 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 placeholder-gray-500 focus:ring-1 focus:ring-gray-600 focus:border-gray-600 disabled:opacity-50"
+              className={`w-full h-40 p-4 border rounded-lg disabled:opacity-50 ${
+                theme === 'dark'
+                  ? 'bg-gray-800 border-gray-700 text-gray-300 placeholder-gray-500 focus:ring-1 focus:ring-gray-600 focus:border-gray-600'
+                  : 'bg-white border-gray-300 text-black placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+              }`}
             />
           </div>
           
@@ -190,13 +260,19 @@ const TextScenarioPanel: React.FC<TextScenarioPanelProps> = ({
           <button
             onClick={onSubmit}
             disabled={isLoading || !userText.trim()}
-            className="mt-6 w-full h-12 flex items-center justify-center px-6 bg-gray-800 text-white font-semibold rounded-full shadow-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-opacity-75 disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed transition-all"
+            className={`mt-6 w-full h-12 flex items-center justify-center px-6 font-semibold rounded-full shadow-md focus:outline-none focus:ring-2 focus:ring-opacity-75 disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
+              theme === 'dark'
+                ? 'bg-gray-800 text-white hover:bg-gray-700 focus:ring-gray-600 disabled:bg-gray-600 disabled:text-gray-400'
+                : 'bg-black text-white hover:bg-gray-900 focus:ring-blue-500 disabled:bg-gray-400 disabled:text-white'
+            }`}
           >
             {isLoading ? (
               <div className="flex items-center space-x-2">
-                <span className="text-gray-400">Analyzing your response...</span>
+                <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-900'}>Analyzing your response...</span>
                 <div className="loading-dots flex items-center space-x-1">
-                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    theme === 'dark' ? 'bg-gray-400' : 'bg-gray-500'
+                  }`}></span>
                   <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
                   <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
                 </div>
