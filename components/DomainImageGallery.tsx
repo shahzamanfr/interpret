@@ -188,37 +188,13 @@ const DomainImageGallery: React.FC<DomainImageGalleryProps> = ({
     fetchImages(1);
   }, [domain, fetchImages]);
 
-  // Create portal container and add classes
+  // Prevent body scroll only
   useEffect(() => {
-    // Create or get portal container
-    let portalContainer = document.getElementById('gallery-portal');
-    if (!portalContainer) {
-      portalContainer = document.createElement('div');
-      portalContainer.id = 'gallery-portal';
-      portalContainer.style.cssText = 'position: fixed; inset: 0; z-index: 99999;';
-      document.body.appendChild(portalContainer);
-    }
-
-    // Add classes to prevent theme transition overlays and hide scrollbar
-    document.documentElement.classList.add('gallery-open');
-    document.body.classList.add('gallery-open');
-    
-    // Prevent body scroll and hide overflow
     const originalOverflow = document.body.style.overflow;
-    const originalPosition = document.body.style.position;
     document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
-    document.body.style.height = '100%';
     
     return () => {
-      document.documentElement.classList.remove('gallery-open');
-      document.body.classList.remove('gallery-open');
       document.body.style.overflow = originalOverflow;
-      document.body.style.position = originalPosition;
-      document.body.style.width = '';
-      document.body.style.height = '';
-      // Don't remove the container, it will be reused
     };
   }, []);
 
@@ -243,20 +219,9 @@ const DomainImageGallery: React.FC<DomainImageGalleryProps> = ({
 
   return createPortal(
     <div
-      className="domain-gallery-modal no-theme-transition fixed inset-0 z-[99999] overflow-hidden"
+      className="fixed inset-0 z-[99999] overflow-hidden"
       style={{ 
-        zIndex: 99999,
-        backgroundColor: theme === "dark" ? "#000" : "#fff",
-        opacity: 1,
-        visibility: "visible",
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100vw',
-        height: '100vh',
-        isolation: 'isolate'
+        backgroundColor: theme === "dark" ? "#000" : "#fff"
       }}
     >
       {/* Top Navigation Bar */}
@@ -271,7 +236,7 @@ const DomainImageGallery: React.FC<DomainImageGalleryProps> = ({
           {onClose && (
             <button
               onClick={onClose}
-              className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-none font-medium transition-colors min-h-[44px] touch-manipulation ${
+              className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-none font-medium transition-colors min-h-[44px] touch-manipulation cursor-pointer ${
                 theme === "dark"
                   ? "text-gray-400 hover:text-white hover:bg-gray-800 active:bg-gray-700"
                   : "text-gray-600 hover:text-black hover:bg-gray-100 active:bg-gray-200"
@@ -300,6 +265,8 @@ const DomainImageGallery: React.FC<DomainImageGalleryProps> = ({
           onClick={handleRefresh}
           disabled={loading}
           className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-5 py-2 rounded-none font-medium transition-colors disabled:opacity-50 min-h-[44px] touch-manipulation text-sm sm:text-base ${
+            loading ? 'cursor-default' : 'cursor-pointer'
+          } ${
             theme === "dark"
               ? "bg-gray-800 text-white hover:bg-gray-700 active:bg-gray-600"
               : "bg-black text-white hover:bg-gray-900 active:bg-gray-800"
@@ -405,7 +372,7 @@ const DomainImageGallery: React.FC<DomainImageGalleryProps> = ({
                   <button
                     key={image.id}
                     onClick={() => handleImageClick(image)}
-                    className={`group relative aspect-square overflow-hidden rounded-none transition-all duration-300 hover:scale-[1.02] active:scale-95 hover:shadow-xl touch-manipulation border ${
+                    className={`group relative aspect-square overflow-hidden rounded-none transition-all duration-300 hover:scale-[1.02] active:scale-95 hover:shadow-xl touch-manipulation border cursor-pointer ${
                       theme === "dark"
                         ? "bg-gray-900 hover:shadow-white/10 border-gray-800 hover:border-gray-700"
                         : "bg-gray-100 hover:shadow-black/20 border-gray-200 hover:border-gray-300"
@@ -462,7 +429,7 @@ const DomainImageGallery: React.FC<DomainImageGalleryProps> = ({
         )}
       </div>
     </div>,
-    document.getElementById('gallery-portal') || document.body,
+    document.body
   );
 };
 

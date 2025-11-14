@@ -1,5 +1,5 @@
 // Unsplash API service for domain-specific images
-const UNSPLASH_ACCESS_KEY = 'YOUR_UNSPLASH_ACCESS_KEY'; // You'll need to get this from Unsplash
+const UNSPLASH_ACCESS_KEY = import.meta.env.VITE_UNSPLASH_ACCESS_KEY || '';
 
 export interface UnsplashImage {
   id: string;

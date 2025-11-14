@@ -80,10 +80,15 @@ async function callWithRetry<T>(
           message.includes("UNAVAILABLE") ||
           code === 503 ||
           code === "503";
+        const is429 =
+          message.includes("Resource exhausted") ||
+          message.includes("RESOURCE_EXHAUSTED") ||
+          code === 429 ||
+          code === "429";
         const isTimeout = message.includes("timeout");
 
-        // Non-503/timeout: break inner loop and try next model immediately
-        if (!is503 && !isTimeout) break;
+        // Non-retryable: break inner loop and try next model immediately
+        if (!is503 && !is429 && !isTimeout) break;
 
         // 503 -> retry with backoff
         if (attempt === retries) break;
@@ -95,6 +100,16 @@ async function callWithRetry<T>(
     // Try next model
   }
 
+  // Check if it's a rate limit error and provide user-friendly message
+  const lastErrorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+  const isRateLimit = lastErrorMessage.includes("Resource exhausted") || 
+                      lastErrorMessage.includes("RESOURCE_EXHAUSTED") ||
+                      lastErrorMessage.includes("429");
+  
+  if (isRateLimit) {
+    throw new Error("⚠️ Server is busy due to high traffic. Too many people are using this site right now. Please try again in a few moments.");
+  }
+  
   throw lastError ?? new Error("Unknown error calling Gemini API");
 }
 
@@ -322,13 +337,18 @@ ${userScenario}
 Provide only the refined, structured scenario text. No extra formatting or explanations.`;
 
   console.log("🤖 Sending scenario refinement request to Gemini API...");
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      temperature: 0.3, // Lower temperature for more focused, structured output
-    },
-  });
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          temperature: 0.3,
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+  );
 
   const refinedText = response.text.trim();
   console.log(
@@ -372,13 +392,18 @@ ${userScenario}
 Output only the refined, on-topic storytelling prompt.`;
 
   console.log("🤖 Sending story refinement request to Gemini API...");
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      temperature: 0.25, // Lowered to reduce randomness and stay on-topic
-    },
-  });
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          temperature: 0.25,
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+  );
 
   const refinedText = response.text.trim();
   console.log(
@@ -476,37 +501,47 @@ Write 4-6 sentences. Mix sentence lengths. Sound human, not formulaic.`;
     return result;
   } else {
     // Rebuttal to user's argument
-    const systemInstruction = `You're debating someone and they just made an argument. Now respond like a real person would - push back on their points, but sound natural and human, not like a robot.
+    const systemInstruction = `You're a FIERCE human debater who FIGHTS HARD for your position. You're not here to be polite - you're here to WIN this debate using every tactical weapon in your arsenal.
 
 **Topic:** ${topic}
-**Their Argument:** ${userArgument}
+**Their Weak Argument:** ${userArgument}
 
-**How to respond naturally:**
-- Start with a natural reaction - "Wait, what?", "Hold on", "Okay but", "I hear you, but"
-- Point out the flaw in their thinking without being robotic
-- Use everyday language and contractions - "you're", "that's", "doesn't", "can't"
-- Mix question and statement styles
-- Reference real things people know about
-- Show some emotion but stay grounded - doubt, surprise, frustration, conviction
-- No AI phrases like "Furthermore", "Additionally", "It is worth noting", "One must consider"
-- Vary your sentence structure naturally
-- Sound like someone who genuinely disagrees and has reasons why
+**DEBATE TACTICS TO USE:**
+- **Attack their logic:** "That's completely illogical because...", "Your reasoning falls apart when..."
+- **Demand evidence:** "Where's your proof?", "Show me the data", "That's just your opinion"
+- **Point out contradictions:** "You just contradicted yourself", "That makes no sense with what you said before"
+- **Use counterexamples:** "What about [specific example that destroys their point]?"
+- **Challenge assumptions:** "You're assuming X, but that's totally wrong because..."
+- **Expose weaknesses:** "The flaw in your argument is...", "You're ignoring the obvious problem..."
+- **Use their words against them:** Quote them back and show why it's wrong
+- **Be relentless:** Don't let them off the hook, keep pushing
 
-**Examples of natural human responses:**
-- "Wait, that doesn't add up though. If what you're saying is true, then why do we see the complete opposite happening in real life? Like, just look at..."
-- "Okay but you're missing something huge here - the whole reason this is a problem is because..."
-- "I mean, sure, that sounds nice on paper, but you're ignoring the fact that most people don't actually experience it that way. Studies show..."
-- "Come on, you can't seriously believe that's the main issue. What about all the evidence that points to..."
-- "Hold on - you just contradicted yourself. First you said X, now you're saying Y. Which one is it?"
+**AGGRESSIVE DEBATE STYLE:**
+- Start with immediate pushback: "No, that's wrong", "Are you serious?", "That's ridiculous"
+- Use strong language: "completely false", "totally backwards", "makes no sense"
+- Challenge everything: "Prove it", "Says who?", "Based on what?"
+- Be direct and confrontational: "You're missing the point", "That's not how it works"
+- Show you're fired up about this topic
+- Use real examples that crush their argument
+- Don't give ground - fight for every point
 
-**Response style:**
-- Write 4-6 sentences with natural flow
-- Mix short punchy statements with longer explanations
-- Use real examples or data when it makes sense
-- Sound like you're actually thinking through their argument, not reciting talking points
-- Show you care about the topic
+**HUMAN DEBATE TACTICS:**
+- "Look, here's what you're not getting..."
+- "Come on, everyone knows that..."
+- "You can't be serious. The evidence clearly shows..."
+- "That's exactly the kind of thinking that causes..."
+- "Hold up - you just proved my point by saying..."
+- "So you're telling me that [restate their position to show how absurd it is]?"
 
-Respond naturally, like a real person having a real debate.`;
+**BE A REAL DEBATER:**
+- Fight like you actually believe your position
+- Use logic, evidence, and examples to destroy their argument
+- Be passionate and confrontational
+- Don't back down or be wishy-washy
+- Make them defend every single point
+- Show why their thinking is flawed
+
+Write 4-6 sentences. Be aggressive, logical, and human. FIGHT BACK HARD.`;
 
     const response = await callWithRetry(
       ai,
@@ -625,12 +660,15 @@ ${conversationText}
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      temperature: 0.3, // Lower temperature for more consistent, accurate evaluation
-      responseMimeType: "application/json",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -805,8 +843,10 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "debateAnalysis",
         ],
       },
-    },
-  });
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 12000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Comprehensive debate evaluation generated");
@@ -846,50 +886,65 @@ async function getTeacherEvaluation(
 ): Promise<Feedback> {
   const systemInstruction = `You are an elite education professor with 20+ years of experience evaluating teaching effectiveness. You will analyze the user's teaching explanation with brutally accurate, meaningful scoring that reflects real teaching performance.
 
-**TEACHING EVALUATION CRITERIA (0-20 points each):**
+**TEACHING EVALUATION CATEGORIES (0-20 points each):**
 
 1. **Clarity & Explanation (0-20):**
-   - 0-5: Confusing, unclear, or overly complex explanations
-   - 6-10: Basic clarity with some confusion points
-   - 11-15: Clear explanations with minor gaps
-   - 16-20: Crystal clear, easy to understand, well-explained concepts
+   - 0-5: Confusing, unclear, overly complex
+   - 6-10: Basic clarity with confusion points
+   - 11-15: Clear explanations, easy to understand
+   - 16-20: Crystal clear, perfectly explained
 
 2. **Structure & Organization (0-20):**
    - 0-5: Disorganized, random, no logical flow
-   - 6-10: Basic structure with some organization
-   - 11-15: Well-organized with clear progression
-   - 16-20: Excellent structure, logical flow, easy to follow
+   - 6-10: Basic structure, some organization
+   - 11-15: Well-organized, clear progression
+   - 16-20: Excellent structure, perfect flow
 
 3. **Engagement & Interest (0-20):**
-   - 0-5: Boring, dry, no engagement techniques
-   - 6-10: Some interesting elements, basic engagement
+   - 0-5: Boring, dry, no engagement
+   - 6-10: Some engagement, basic interest
    - 11-15: Engaging with good techniques
-   - 16-20: Highly engaging, captivating, holds attention
+   - 16-20: Highly engaging, captivating
 
 4. **Educational Value (0-20):**
-   - 0-5: Little to no learning value, superficial
+   - 0-5: No learning value, superficial
    - 6-10: Basic educational content
-   - 11-15: Good educational value, informative
-   - 16-20: Exceptional learning value, comprehensive understanding
+   - 11-15: Good educational value
+   - 16-20: Exceptional learning value
 
 5. **Accessibility & Adaptability (0-20):**
-   - 0-5: Too complex, not accessible to target audience
-   - 6-10: Somewhat accessible, some complexity issues
+   - 0-5: Too complex, not accessible
+   - 6-10: Some accessibility issues
    - 11-15: Good accessibility, appropriate level
-   - 16-20: Perfectly accessible, adapts to audience level
+   - 16-20: Perfectly accessible, adapts well
 
 6. **Completeness & Depth (0-20):**
    - 0-5: Incomplete, shallow coverage
    - 6-10: Basic coverage, some gaps
    - 11-15: Good coverage, adequate depth
-   - 16-20: Comprehensive, thorough, complete coverage
+   - 16-20: Comprehensive, thorough coverage
 
-**SCORING PHILOSOPHY:**
-- Be RUTHLESS but FAIR - most teachers score 30-60 points total
-- Only exceptional teaching gets 70+ points
-- Reference SPECIFIC parts of their explanation
-- Consider the complexity of the topic being taught
-- Factor in how well they adapted to their audience
+**CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
+- Category scores (0-20 each) evaluate specific teaching skills
+- Overall score (0-100) evaluates COMPLETE TEACHING EFFECTIVENESS
+- DO NOT add category scores together
+- DO NOT average category scores
+- DO NOT use category scores to calculate overall score
+- Evaluate overall score separately based on total teaching impact
+
+**OVERALL SCORE (0-100) - INDEPENDENT EVALUATION:**
+Judge complete teaching performance based on total effectiveness:
+- 0-20: Terrible teaching, no learning value
+- 21-40: Weak teaching with major issues
+- 41-60: Decent teaching with some strengths
+- 61-80: Strong teaching, effective educator
+- 81-100: Exceptional teaching, master educator
+
+**SCORING RULES:**
+- Score each category independently based on actual performance
+- Score overall independently based on complete teaching impact
+- Be accurate and honest - most teachers score 30-60 overall
+- Only truly exceptional teaching gets 70+ overall
 
 **ANALYSIS REQUIREMENTS:**
 - Quote specific parts of their teaching
@@ -904,21 +959,24 @@ async function getTeacherEvaluation(
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description: "The coaching role used (Teacher).",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description: "The coaching role used (Teacher).",
           },
           overall_score: {
             type: Type.INTEGER,
-            description: "Overall teaching score out of 100.",
+            description: "Overall teaching score out of 100 - INDEPENDENT evaluation of complete teaching effectiveness, NOT calculated from category scores.",
           },
           category_scores: {
             type: Type.OBJECT,
@@ -1077,9 +1135,11 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "exampleRewrite",
           "teachingAnalysis",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Teacher evaluation generated");
@@ -1093,59 +1153,90 @@ async function getStorytellerEvaluation(
   ai: GoogleGenAI,
   userText: string,
 ): Promise<Feedback> {
-  const systemInstruction = `You are an elite creative writing professor and published author with 20+ years of experience evaluating storytelling. You will analyze the user's story with brutally accurate, meaningful scoring that reflects real storytelling performance.
+  const systemInstruction = `You are a warm, passionate storytelling mentor who believes every story has the power to touch hearts. You've spent decades helping people find their authentic voice and connect with others through stories. You evaluate with honesty but always with encouragement and heart.
 
-**STORYTELLING EVALUATION CRITERIA (0-20 points each):**
+**STORYTELLING EVALUATION CATEGORIES (0-20 points each):**
 
 1. **Narrative Structure (0-20):**
-   - 0-5: No clear structure, confusing plot, poor pacing
-   - 6-10: Basic structure with some issues
-   - 11-15: Good structure, clear progression
-   - 16-20: Excellent structure, perfect pacing, compelling flow
+   - 0-5: No structure, random, disorganized
+   - 6-10: Weak structure, confusing flow
+   - 11-15: Clear structure, logical progression
+   - 16-20: Excellent structure, masterful organization
 
 2. **Character Development (0-20):**
-   - 0-5: Flat, one-dimensional characters
-   - 6-10: Basic character development
-   - 11-15: Good character depth and development
-   - 16-20: Rich, complex, compelling characters
+   - 0-5: No characters or completely flat
+   - 6-10: Basic characters, minimal development
+   - 11-15: Well-developed characters, feel real
+   - 16-20: Rich, complex characters you deeply care about
 
-3. **Descriptive Language (0-20):**
-   - 0-5: Bland, generic descriptions
-   - 6-10: Basic descriptive elements
-   - 11-15: Good use of vivid language
-   - 16-20: Exceptional, immersive descriptions
+3. **Emotional Depth (0-20):**
+   - 0-5: No emotional content, feels empty
+   - 6-10: Surface-level emotions, doesn't connect
+   - 11-15: Real emotional depth, makes you feel
+   - 16-20: Profound emotional impact, deeply moving
 
-4. **Emotional Impact (0-20):**
-   - 0-5: No emotional connection, flat
-   - 6-10: Some emotional elements
-   - 11-15: Good emotional engagement
-   - 16-20: Powerful emotional impact, deeply moving
+4. **Creativity & Originality (0-20):**
+   - 0-5: Generic, cliché, unoriginal
+   - 6-10: Some creative elements, mostly predictable
+   - 11-15: Creative and fresh, interesting ideas
+   - 16-20: Highly original, innovative, unique perspective
 
-5. **Creativity & Originality (0-20):**
-   - 0-5: Cliché, unoriginal, predictable
-   - 6-10: Some creative elements
-   - 11-15: Good creativity and originality
-   - 16-20: Highly original, innovative, surprising
+5. **Emotional Impact (0-20):**
+   - 0-5: No impact, leaves reader cold
+   - 6-10: Minimal impact, quickly forgotten
+   - 11-15: Good impact, stays with you
+   - 16-20: Powerful impact, changes how you feel
 
 6. **Engagement & Pacing (0-20):**
-   - 0-5: Boring, slow, hard to follow
-   - 6-10: Some engaging moments
-   - 11-15: Good engagement and pacing
-   - 16-20: Captivating, perfect pacing, page-turner
+   - 0-5: Boring, poor pacing, hard to read
+   - 6-10: Some engaging moments, uneven pacing
+   - 11-15: Engaging throughout, good pacing
+   - 16-20: Captivating, perfect pacing, can't stop reading
 
-**SCORING PHILOSOPHY:**
-- Be RUTHLESS but FAIR - most storytellers score 30-60 points total
-- Only exceptional storytelling gets 70+ points
-- Reference SPECIFIC parts of their story
-- Consider the complexity and ambition of their narrative
-- Factor in their use of literary techniques
+**CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
+- Category scores (0-20 each) evaluate specific storytelling skills
+- Overall score (0-100) evaluates the COMPLETE STORY'S IMPACT
+- DO NOT add category scores together
+- DO NOT average category scores
+- DO NOT use category scores to calculate overall score
+- Evaluate overall score separately based on total story effectiveness
 
-**ANALYSIS REQUIREMENTS:**
-- Quote specific parts of their story
-- Identify their strongest and weakest storytelling moments
-- Note their use of literary devices (metaphors, dialogue, imagery)
-- Assess their character development and world-building
-- Evaluate their ability to create emotional connection
+**OVERALL SCORE (0-100) - INDEPENDENT EVALUATION:**
+Judge the story as a complete work based on its total impact:
+- 0-20: Terrible story, no redeeming qualities, completely ineffective
+- 21-40: Weak story with major problems, minimal impact
+- 41-60: Decent story with some strengths but clear weaknesses
+- 61-80: Strong story that works well and connects emotionally
+- 81-100: Exceptional story that profoundly moves and stays with you
+
+**SCORING RULES:**
+- Score each category independently based on actual performance
+- Score overall independently based on complete story impact
+- Be accurate and honest - most stories score 30-60 overall
+- Only truly exceptional stories get 70+ overall
+
+**HEART-CENTERED EVALUATION PHILOSOPHY:**
+- Focus on human connection over technical perfection
+- Celebrate authentic moments and genuine emotion
+- Encourage personal voice and unique perspective
+- Value stories that make people feel something real
+- Remember that great stories come from the heart, not just the head
+
+**WHAT MAKES STORIES POWERFUL:**
+- Real emotions that everyone can relate to
+- Moments that make you laugh, cry, or think differently
+- Characters who feel like real people with real problems
+- Details that make you feel like you're actually there
+- A voice that sounds genuinely human, not robotic
+- Stories that stay with you after you finish reading
+
+**FEEDBACK STYLE - BE HUMAN AND ENCOURAGING:**
+- Talk like a supportive friend who wants to help them grow
+- Point out what genuinely moved you or worked well
+- Give specific, actionable advice that feels doable
+- Use warm, encouraging language that builds confidence
+- Focus on helping them find their authentic voice
+- Remember that storytelling is about connecting hearts, not impressing critics
 
 **Input:**
 - **The User's Story:** ${userText}
@@ -1153,17 +1244,20 @@ async function getStorytellerEvaluation(
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description: "The coaching role used (Storyteller).",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description: "The coaching role used (Storyteller).",
           },
           overall_score: {
             type: Type.INTEGER,
@@ -1326,9 +1420,11 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "exampleRewrite",
           "storytellingAnalysis",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Storyteller evaluation generated");
@@ -1365,15 +1461,18 @@ You will receive the user's text. Your job is to dissect their communication sty
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: { type: Type.STRING, description: "The coaching role used." },
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: { type: Type.STRING, description: "The coaching role used." },
           overall_score: {
             type: Type.INTEGER,
             description: "Overall score out of 100.",
@@ -1498,9 +1597,11 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "communicationBehavior",
           "exampleRewrite",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Generic evaluation generated");
@@ -1565,13 +1666,18 @@ Start the group discussion naturally as a real person would. Be human, conversat
 **Output:**
 Just your natural opening contribution to start the discussion. Be human, not AI.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: systemInstruction,
-      config: {
-        temperature: 0.8, // Higher temperature for more natural, varied responses
-      },
-    });
+    const response = await callWithRetry(
+      ai,
+      async (model) =>
+        ai.models.generateContent({
+          model,
+          contents: systemInstruction,
+          config: {
+            temperature: 0.8,
+          },
+        }),
+      { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 8000 },
+    );
 
     const content = response.text.trim();
     console.log("✅ Initial group discussion response generated");
@@ -1630,13 +1736,18 @@ ${
 **Output:**
 Just your natural response to the discussion. Be human, not AI.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: systemInstruction,
-      config: {
-        temperature: 0.8, // Higher temperature for more natural, varied responses
-      },
-    });
+    const response = await callWithRetry(
+      ai,
+      async (model) =>
+        ai.models.generateContent({
+          model,
+          contents: systemInstruction,
+          config: {
+            temperature: 0.8,
+          },
+        }),
+      { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 8000 },
+    );
 
     const content = response.text.trim();
     console.log("✅ Group discussion response generated");
@@ -1710,13 +1821,20 @@ ${opponentMessage}
 - 18-20: Multiple authoritative sources, compelling data, bulletproof evidence
 
 **Tone & Language (0-20) - EVALUATE ACTUAL COMMUNICATION QUALITY:**
-- 0-2: Incomprehensible, inappropriate, offensive
-- 3-5: Inappropriate tone, basic language, unclear
-- 6-8: Adequate tone, simple language, mostly clear
-- 9-11: Professional tone, articulate, clear
-- 12-14: Sophisticated tone, eloquent delivery
+- 0-1: Hate speech, extremely offensive, vulgar profanity
+- 2-3: Inappropriate, rude, unprofessional language
+- 4-6: Basic tone, simple language, mostly appropriate
+- 7-9: Professional tone, articulate, clear
+- 10-14: Sophisticated tone, eloquent delivery
 - 15-17: Masterful tone, compelling delivery
 - 18-20: Exceptional tone, persuasive mastery
+
+**BRUTAL TONE SCORING RULES:**
+- Hate speech ("I hate [group]") = 0-1 points MAXIMUM
+- Vulgar profanity (f-word, explicit) = 0-2 points MAXIMUM
+- Rude/inappropriate = 2-3 points MAXIMUM
+- 1-3 word responses = 0-3 points MAXIMUM regardless of content
+- Professional debate language = 7+ points
 
 **Opponent Engagement (0-20) - EVALUATE ACTUAL ENGAGEMENT:**
 - 0-2: Ignores opponent completely, talks past them
@@ -1811,6 +1929,39 @@ Evaluate the message's overall effectiveness as a debate response:
 - Be direct and honest about THIS response - what they ACTUALLY said
 - Don't sugarcoat - be brutally honest about real performance
 - Don't inflate scores to be nice - users want accuracy, not fake praise
+
+**CRITICAL SCORING RULES - NO EXCEPTIONS:**
+- **1-3 word responses = 0-8 TOTAL points maximum (all categories combined)**
+- **Hate speech = 0-1 Tone points, 0-3 total points maximum**
+- **"I hate [anything]" = 0-1 Tone, 0-2 Logic, 0-1 Evidence, 0-2 Engagement, 0-2 Structure**
+- **Vulgar profanity = 0-2 Tone points maximum**
+- **Empty responses = 0 points in all categories**
+- **Single sentences without reasoning = maximum 15 total points**
+
+**CONTENT-BASED SCORING - EVALUATE ACTUAL MEANING:**
+
+**MEANINGFUL SHORT RESPONSES CAN SCORE WELL:**
+- "That's a false equivalence" = Logic: 12, Tone: 8, Engagement: 10 (good logic, short but meaningful)
+- "Where's your evidence?" = Logic: 8, Engagement: 12, Tone: 9 (challenges opponent effectively)
+- "You contradicted yourself" = Logic: 11, Engagement: 10, Tone: 8 (points out logical flaw)
+
+**MEANINGLESS RESPONSES GET LOW SCORES:**
+- "I hate feminism" = Tone: 0, Logic: 0, Evidence: 0, Engagement: 0, Structure: 1 = 1 total
+- "That's stupid" = Tone: 3, Logic: 2, Evidence: 0, Engagement: 2, Structure: 2 = 9 total
+- "Whatever" = All categories: 0-1 points = 2 total
+
+**SCORE BASED ON ACTUAL CONTENT QUALITY:**
+- Does it make a logical point? → Logic score
+- Does it engage with opponent's argument? → Engagement score  
+- Is the tone appropriate for debate? → Tone score
+- Does it provide support/reasoning? → Evidence score
+- Is it organized/clear? → Structure score
+
+**LENGTH DOESN'T MATTER - MEANING DOES:**
+- Short but insightful = High scores
+- Long but meaningless = Low scores
+- Hate speech = Always 0-1 points regardless of length
+- Logical fallacy identification = High logic score even if short
 - **CRITICAL: Read their actual message content and score based on what they actually said**
 - **CRITICAL: Don't use hardcoded keywords - analyze their actual performance**
 - **CRITICAL: Each score must reflect their actual response quality, not generic templates**
@@ -1892,12 +2043,15 @@ Evaluate the message's overall effectiveness as a debate response:
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      temperature: 0.2, // Lower temperature for consistent scoring
-      responseMimeType: "application/json",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -1962,8 +2116,10 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "critique",
         ],
       },
-    },
-  });
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Individual message scored:", result.overallPerformance);
@@ -2110,11 +2266,9 @@ export async function getEnhancedDebateEvaluation(
     ),
   };
 
-  // Calculate overall performance score separately from category averages
-  const overallScore = Math.round(
-    messageScores.reduce((sum, msg) => sum + msg.overallPerformance, 0) /
-      messageScores.length,
-  );
+  // Calculate overall performance score as weighted average of categories
+  const categoryTotal = Object.values(avgScores).reduce((sum, score) => sum + score, 0);
+  const overallScore = Math.round((categoryTotal / 100) * 100); // Convert from 0-100 to 0-100 scale
 
   // Analyze performance patterns
   const performancePatterns = analyzePerformancePatterns(messageScores);
@@ -2253,28 +2407,31 @@ ${performancePatterns}
 - DO compare their performance to real debate standards
 - DO give actionable feedback based on what they actually said
 
-**RESPONSE STYLE - BE EXTREMELY BRIEF:**
+**RESPONSE STYLE - BE BRUTALLY HONEST:**
 - MAXIMUM 1-2 sentences per response field
-- Use bullet points and very short phrases
-- NO paragraphs - only short, punchy statements
+- If no real strengths exist, say "No significant strengths demonstrated"
+- If performance is terrible, say so directly
+- Don't make up fake positives like "consistent typing"
 - Be direct and actionable - cut to the point immediately
 - Use powerful, engaging language that motivates improvement
-- Think Twitter/X style - concise and impactful
 
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description: "The coaching role used (Enhanced Debate Evaluation).",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description: "The coaching role used (Enhanced Debate Evaluation).",
           },
           overall_score: {
             type: Type.INTEGER,
@@ -2623,9 +2780,11 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "worldClassComparison",
           "performanceInsights",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 15000 },
+  );
 
   const result = JSON.parse(response.text);
 
@@ -2696,79 +2855,134 @@ ${agentsText}
 **FULL DISCUSSION HISTORY:**
 ${discussionText}
 
-**COMPREHENSIVE GROUP DISCUSSION EVALUATION CRITERIA (0-20 points each):**
+**GROUP DISCUSSION EVALUATION CATEGORIES (0-20 points each):**
 
 1. **Participation & Engagement (0-20):**
-   - 0-5: Minimal participation, passive observer
-   - 6-10: Basic participation, some contributions
-   - 11-15: Good participation, regular contributions
-   - 16-20: Excellent participation, highly engaged throughout
+   - 0: No participation or completely irrelevant
+   - 1-3: One word, no context, irrelevant to topic
+   - 4-7: Minimal participation, barely contributes
+   - 8-12: Basic participation, some contributions
+   - 13-16: Active participation, meaningful contributions
+   - 17-20: Exceptional participation, drives discussion
 
 2. **Communication Clarity (0-20):**
-   - 0-5: Unclear, confusing, hard to understand
-   - 6-10: Basic clarity with some confusion
-   - 11-15: Clear communication, easy to follow
-   - 16-20: Crystal clear, articulate, well-expressed
+   - 0: Incomprehensible or no communication
+   - 1-3: Unclear, confusing, irrelevant
+   - 4-7: Basic clarity but weak expression
+   - 8-12: Clear enough to understand
+   - 13-16: Clear and well-expressed
+   - 17-20: Crystal clear, perfectly articulated
 
 3. **Leadership & Initiative (0-20):**
-   - 0-5: No leadership, follows others' lead
-   - 6-10: Some initiative, occasional leadership
-   - 11-15: Good leadership, takes initiative
-   - 16-20: Strong leadership, drives discussion forward
+   - 0: No initiative whatsoever
+   - 1-3: Completely passive, no leadership
+   - 4-7: Minimal initiative
+   - 8-12: Some initiative shown
+   - 13-16: Good leadership when needed
+   - 17-20: Strong leadership throughout
 
 4. **Active Listening (0-20):**
-   - 0-5: Doesn't listen, ignores others' points
-   - 6-10: Basic listening, some acknowledgment
-   - 11-15: Good listening, builds on others' ideas
-   - 16-20: Excellent listening, references others' contributions
+   - 0: Completely ignores others
+   - 1-3: No acknowledgment of others
+   - 4-7: Minimal listening
+   - 8-12: Basic listening skills
+   - 13-16: Good listening, builds on ideas
+   - 17-20: Exceptional listening and synthesis
 
 5. **Collaboration Skills (0-20):**
-   - 0-5: Competitive, doesn't collaborate
-   - 6-10: Some collaboration, works with others
-   - 11-15: Good collaboration, team player
-   - 16-20: Excellent collaboration, enhances group dynamics
+   - 0: Disruptive or no collaboration
+   - 1-3: Dismissive, doesn't collaborate
+   - 4-7: Minimal collaboration
+   - 8-12: Basic teamwork
+   - 13-16: Good collaboration
+   - 17-20: Excellent team synergy
 
 6. **Critical Thinking (0-20):**
-   - 0-5: Superficial thinking, no analysis
-   - 6-10: Basic analysis, some depth
-   - 11-15: Good critical thinking, thoughtful analysis
-   - 16-20: Excellent critical thinking, deep insights
+   - 0: No thinking demonstrated
+   - 1-3: Superficial, no analysis
+   - 4-7: Very basic thinking
+   - 8-12: Some analysis shown
+   - 13-16: Good critical thinking
+   - 17-20: Exceptional insights
 
-**SCORING PHILOSOPHY:**
-- Be RUTHLESS but FAIR - most participants score 30-60 points total
-- Only exceptional group discussion performance gets 70+ points
-- Reference SPECIFIC contributions from the discussion
-- Consider the user's role in group dynamics
-- Factor in how well they engaged with different agent personalities
-- Assess their ability to navigate group dynamics
+**CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
+- Category scores (0-20 each) evaluate specific discussion skills
+- Overall score (0-100) evaluates COMPLETE DISCUSSION PERFORMANCE
+- DO NOT add category scores together
+- DO NOT average category scores
+- DO NOT use category scores to calculate overall score
+- Evaluate overall score separately based on total discussion impact
 
-**ANALYSIS REQUIREMENTS:**
-- Quote specific contributions the user made
-- Identify their strongest and weakest moments in the discussion
-- Note how they responded to different agent personalities
-- Assess their ability to build on others' ideas
-- Evaluate their group discussion techniques (listening, building consensus, challenging ideas)
-- Consider their overall impact on the discussion flow
+**OVERALL SCORE (0-100) - BRUTALLY ACCURATE:**
+
+**SCORE BASED ON ACTUAL PERFORMANCE:**
+- 0-5: No contribution, irrelevant word, or disruptive
+- 6-15: One word with minimal relevance, no real contribution
+- 16-30: Minimal participation, very poor skills
+- 31-50: Basic participation, some skills shown
+- 51-70: Good participation, solid skills
+- 71-85: Strong participation, excellent skills
+- 86-100: Exceptional leadership and insight
+
+**CRITICAL: BE BRUTALLY HONEST**
+- Irrelevant word = 0-2 points maximum
+- One relevant word = 3-8 points maximum
+- One sentence with no depth = 10-20 points
+- Multiple shallow comments = 20-35 points
+- One insightful comment = 50-65 points
+- Multiple insightful comments = 65-80 points
+- Discussion leadership = 80-95 points
+- NO MERCY for poor performance
+- NO INFLATION of scores
+- ACCURATE reflection of actual contribution
+
+**CRITICAL: BRUTALLY ACCURATE SCORING**
+
+**EVALUATE ACTUAL CONTRIBUTION VALUE:**
+1. **Relevance** - Is it related to the discussion topic?
+2. **Substance** - Does it add any value or insight?
+3. **Skills** - Does it show any group discussion skills?
+4. **Impact** - Does it advance the discussion at all?
+
+**STRICT SCORING RULES:**
+- Irrelevant word (no relation to topic) = 0-2 points total
+- Relevant word but no substance = 3-8 points total
+- One sentence, no depth = 10-20 points total
+- Multiple shallow comments = 20-35 points total
+- One insightful comment = 50-65 points total
+- Multiple insightful contributions = 65-80 points total
+- Discussion leadership = 80-95 points total
+
+**BE BRUTALLY HONEST:**
+- If contribution is worthless, score it 0-5
+- If contribution is irrelevant, score it 0-2
+- If contribution shows no skills, score it accordingly
+- NO MERCY for poor performance
+- NO BENEFIT OF THE DOUBT
+- ACCURATE scoring only
 
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description: "The coaching role used (Group Discussion).",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description: "The coaching role used (Group Discussion).",
           },
           overall_score: {
             type: Type.INTEGER,
             description:
-              "Overall group discussion score out of 100 based on comprehensive analysis.",
+              "Overall group discussion score out of 100 - INDEPENDENT evaluation of complete discussion performance, NOT calculated from category scores.",
           },
           category_scores: {
             type: Type.OBJECT,
@@ -2938,12 +3152,59 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "exampleRewrite",
           "groupDiscussionAnalysis",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 12000 },
+  );
 
   const result = JSON.parse(response.text);
-  console.log("✅ Comprehensive group discussion evaluation generated");
+  
+  // CRITICAL: Validate and correct overall score based on category scores
+  const categoryScores = result.category_scores;
+  const categoryTotal = Object.values(categoryScores).reduce((sum: number, score: any) => sum + Number(score), 0) as number;
+  const categoryAverage = Math.round((categoryTotal as number) / 6); // 6 categories
+  
+  // Calculate realistic overall score based on category performance
+  // Overall score should reflect actual performance, not be inflated
+  const calculatedOverall = Math.round((categoryTotal / 120) * 100);
+  
+  // If AI gave inflated score, correct it to match actual performance
+  if (result.overall_score > calculatedOverall + 10) {
+    console.warn(`⚠️ Correcting inflated overall score: ${result.overall_score} → ${calculatedOverall}`);
+    result.overall_score = calculatedOverall;
+    result.score = calculatedOverall;
+  }
+  
+  // If all categories are low (avg < 8), overall should be very low
+  if (categoryAverage < 8 && result.overall_score > 30) {
+    const correctedScore = Math.min(30, calculatedOverall);
+    console.warn(`⚠️ Correcting score for poor performance: ${result.overall_score} → ${correctedScore}`);
+    result.overall_score = correctedScore;
+    result.score = correctedScore;
+  }
+  
+  // If all categories are very low (avg < 4), overall should be 0-10
+  if (categoryAverage < 4 && result.overall_score > 10) {
+    const correctedScore = Math.min(10, calculatedOverall);
+    console.warn(`⚠️ Correcting score for terrible performance: ${result.overall_score} → ${correctedScore}`);
+    result.overall_score = correctedScore;
+    result.score = correctedScore;
+  }
+  
+  // If category total is less than 20 (out of 120), cap at 15 overall
+  if ((categoryTotal as number) < 20 && result.overall_score > 15) {
+    console.warn(`⚠️ Correcting score for minimal contribution: ${result.overall_score} → 15`);
+    result.overall_score = 15;
+    result.score = 15;
+  }
+  
+  console.log("✅ Group discussion evaluation generated with validated scoring", {
+    categoryAverage,
+    categoryTotal,
+    calculatedOverall,
+    finalOverall: result.overall_score
+  });
   return result;
 }
 
@@ -3481,7 +3742,7 @@ Your evaluation MUST judge whether the explanation sounds like an actual teacher
 Topic: ${teachingTopic}
 User Teaching: ${userTeaching}
 
-**TEACHING EVALUATION CRITERIA (0-20 points each):**
+**TEACHING EVALUATION CATEGORIES (0-20 points each):**
 
 1. **Clarity & Explanation (0-20):**
    - 0-5: Confusing, unclear, hard to understand
@@ -3493,38 +3754,53 @@ User Teaching: ${userTeaching}
    - 0-5: Disorganized, no clear flow
    - 6-10: Basic structure, some organization
    - 11-15: Well-organized, logical flow
-   - 16-20: Excellent structure, perfect organization (intro → steps → summary)
+   - 16-20: Excellent structure, perfect organization
 
 3. **Engagement & Interest (0-20):**
    - 0-5: Boring, unengaging, monotone
    - 6-10: Some engagement, basic interest
-   - 11-15: Engaging, holds attention with relevant examples
-   - 16-20: Highly engaging with analogies, questions, or interaction
+   - 11-15: Engaging, holds attention
+   - 16-20: Highly engaging, captivating
 
 4. **Educational Value (0-20):**
    - 0-5: No learning value, superficial
    - 6-10: Basic educational content
-   - 11-15: Good educational value with correct concepts
-   - 16-20: Excellent educational content; accurate, key misconceptions addressed
+   - 11-15: Good educational value
+   - 16-20: Excellent educational content
 
 5. **Accessibility & Adaptability (0-20):**
    - 0-5: Too complex, not accessible
    - 6-10: Some accessibility issues
-   - 11-15: Good accessibility; adjusts vocabulary
-   - 16-20: Adapted to audience; scaffolding and pacing are evident
+   - 11-15: Good accessibility
+   - 16-20: Perfectly adapted to audience
 
 6. **Completeness & Depth (0-20):**
    - 0-5: Incomplete, superficial coverage
    - 6-10: Basic coverage, some depth
    - 11-15: Good coverage and depth
-   - 16-20: Comprehensive; covers steps, edge cases, and checks for understanding
+   - 16-20: Comprehensive, thorough coverage
 
-**REALISTIC SCORE INTERPRETATION:**
-- 0-25: Poor teaching (needs major improvement)
-- 25-40: Basic teaching (typical beginner)
-- 40-55: Good teaching (competent teacher)
-- 55-70: Excellent teaching (skilled educator)
-- 70-100: Master-level teaching (rare)
+**CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
+- Category scores (0-20 each) evaluate specific teaching skills
+- Overall score (0-100) evaluates COMPLETE TEACHING EFFECTIVENESS
+- DO NOT add category scores together
+- DO NOT average category scores
+- DO NOT use category scores to calculate overall score
+- Evaluate overall score separately based on total teaching impact
+
+**OVERALL SCORE (0-100) - INDEPENDENT EVALUATION:**
+Judge complete teaching performance based on total effectiveness:
+- 0-20: Terrible teaching, no learning value
+- 21-40: Weak teaching with major issues
+- 41-60: Decent teaching with some strengths
+- 61-80: Strong teaching, effective educator
+- 81-100: Exceptional teaching, master educator
+
+**SCORING RULES:**
+- Score each category independently based on actual performance
+- Score overall independently based on complete teaching impact
+- Be accurate and honest - most teachers score 30-60 overall
+- Only truly exceptional teaching gets 70+ overall
 
 **BRUTALLY ACCURATE ANALYSIS REQUIREMENTS:**
 - Reference specific parts of their teaching
@@ -3532,8 +3808,6 @@ User Teaching: ${userTeaching}
 - Identify where they struggled vs excelled
 - Be brutally honest about performance
 - Score based on ACTUAL teaching quality, not potential
-
-Additionally:
 - Explicitly note any factual inaccuracies or missing steps
 - If tone is not teacher-like, deduct across Clarity/Structure/Engagement
 
@@ -3546,22 +3820,25 @@ Additionally:
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description:
-              "The coaching role used (Enhanced Teacher Evaluation).",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description:
+                  "The coaching role used (Enhanced Teacher Evaluation).",
           },
           overall_score: {
             type: Type.INTEGER,
-            description: "Overall teaching score out of 100.",
+            description: "Overall teaching score out of 100 - INDEPENDENT evaluation of complete teaching effectiveness, NOT calculated from category scores.",
           },
           category_scores: {
             type: Type.OBJECT,
@@ -3712,9 +3989,11 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "communicationBehavior",
           "exampleRewrite",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 12000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Enhanced teacher evaluation generated");
@@ -3744,39 +4023,45 @@ User Story: ${userStory}
 **STORYTELLING EVALUATION CRITERIA (0-20 points each):**
 
 1. **Narrative Structure (0-20):**
-   - 0-5: No clear structure, confusing flow
-   - 6-10: Basic structure, some organization
-   - 11-15: Good structure, clear progression
+   - 0-3: No structure, random sentences
+   - 4-7: Minimal structure, confusing flow
+   - 8-11: Basic structure, some organization
+   - 12-15: Good structure, clear progression
    - 16-20: Excellent structure, perfect flow
 
 2. **Character Development (0-20):**
-   - 0-5: Flat, one-dimensional characters
-   - 6-10: Basic character development
-   - 11-15: Good character depth
+   - 0-3: No characters or completely flat
+   - 4-7: Mentioned characters, no development
+   - 8-11: Basic character development
+   - 12-15: Good character depth
    - 16-20: Rich, complex characters
 
 3. **Descriptive Language (0-20):**
-   - 0-5: Bland, unengaging descriptions
-   - 6-10: Basic descriptive language
-   - 11-15: Good descriptive quality
+   - 0-3: No descriptions, bland language
+   - 4-7: Minimal descriptions, basic language
+   - 8-11: Some descriptive language
+   - 12-15: Good descriptive quality
    - 16-20: Vivid, captivating descriptions
 
 4. **Emotional Impact (0-20):**
-   - 0-5: No emotional connection
-   - 6-10: Some emotional elements
-   - 11-15: Good emotional engagement
+   - 0-3: No emotional content whatsoever
+   - 4-7: Minimal emotional elements
+   - 8-11: Some emotional connection
+   - 12-15: Good emotional engagement
    - 16-20: Powerful emotional impact
 
 5. **Creativity & Originality (0-20):**
-   - 0-5: Cliché, unoriginal
-   - 6-10: Some creative elements
-   - 11-15: Good creativity
+   - 0-3: Completely generic or copied
+   - 4-7: Very basic, cliché content
+   - 8-11: Some creative elements
+   - 12-15: Good creativity
    - 16-20: Highly original, innovative
 
 6. **Engagement & Pacing (0-20):**
-   - 0-5: Boring, poor pacing
-   - 6-10: Basic engagement
-   - 11-15: Good pacing and engagement
+   - 0-3: Extremely boring, no pacing
+   - 4-7: Dull, poor pacing
+   - 8-11: Basic engagement
+   - 12-15: Good pacing and engagement
    - 16-20: Captivating, perfect pacing
 
 **REALISTIC SCORE INTERPRETATION:**
@@ -3802,18 +4087,21 @@ User Story: ${userStory}
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: systemInstruction,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description:
-              "The coaching role used (Enhanced Storyteller Evaluation).",
+  const response = await callWithRetry(
+    ai,
+    async (model) =>
+      ai.models.generateContent({
+        model,
+        contents: systemInstruction,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              role: {
+                type: Type.STRING,
+                description:
+                  "The coaching role used (Enhanced Storyteller Evaluation).",
           },
           overall_score: {
             type: Type.INTEGER,
@@ -3967,9 +4255,11 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
           "communicationBehavior",
           "exampleRewrite",
         ],
-      },
-    },
-  });
+          },
+        },
+      }),
+    { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 12000 },
+  );
 
   const result = JSON.parse(response.text);
   console.log("✅ Enhanced storyteller evaluation generated");
@@ -4023,18 +4313,30 @@ export async function extractTextFromFile(
   }
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: { parts: [filePart, { text: systemInstruction }] },
-      config: {
-        temperature: 0.1, // Low temperature for accurate text extraction
-      },
+    console.log("📄 Sending file to Gemini for extraction...", {
+      fileName: file.name,
+      mimeType: file.mimeType,
+      contentLength: file.content.length,
     });
+
+    const response = await callWithRetry(
+      ai,
+      async (model) =>
+        ai.models.generateContent({
+          model,
+          contents: { parts: [filePart, { text: systemInstruction }] },
+          config: {
+            temperature: 0.1,
+          },
+        }),
+      { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 15000 },
+    );
 
     const extractedText = response.text.trim();
     console.log("✅ Text extracted from file:", {
       fileName: file.name,
       textLength: extractedText.length,
+      preview: extractedText.substring(0, 200),
     });
     return extractedText;
   } catch (error) {
@@ -4088,13 +4390,18 @@ ${extractedText}
 **Your refined teaching topic:**`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: { parts: [{ text: systemInstruction }] },
-      config: {
-        temperature: 0.3, // Slightly higher for creative organization
-      },
-    });
+    const response = await callWithRetry(
+      ai,
+      async (model) =>
+        ai.models.generateContent({
+          model,
+          contents: { parts: [{ text: systemInstruction }] },
+          config: {
+            temperature: 0.3,
+          },
+        }),
+      { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
+    );
 
     const refinedContent = response.text.trim();
     console.log("✅ Content refined for teaching:", {
@@ -4130,6 +4437,7 @@ export async function processUploadedFilesForTeaching(
   let allExtractedText = "";
 
   // Process each file
+  let lastError: Error | null = null;
   for (const file of files) {
     try {
       const extractedText = await extractTextFromFile(ai, file);
@@ -4138,11 +4446,16 @@ export async function processUploadedFilesForTeaching(
       allExtractedText += `\n\n--- Content from ${file.name} ---\n${extractedText}`;
     } catch (error) {
       console.error(`❌ Failed to process file ${file.name}:`, error);
+      lastError = error instanceof Error ? error : new Error(String(error));
       // Continue with other files even if one fails
     }
   }
 
   if (!allExtractedText.trim()) {
+    // If we have a rate limit or server error, throw that instead of generic message
+    if (lastError) {
+      throw lastError;
+    }
     throw new Error(
       "No content could be extracted from any of the uploaded files",
     );

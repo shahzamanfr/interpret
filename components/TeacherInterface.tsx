@@ -14,6 +14,7 @@ import {
 } from "../services/geminiService";
 import { useTheme } from "../contexts/ThemeContext";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
+import LoadingAnalysis from "./LoadingAnalysis";
 
 interface TeacherInterfaceProps {
   onBack: () => void;
@@ -191,7 +192,7 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
 
     const newFiles: UploadedFile[] = [];
 
-    Array.from(files).forEach((file) => {
+    Array.from(files).forEach((file: File) => {
       // Check file type
       if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
         setFileUploadState((prev) => ({
@@ -252,45 +253,39 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
       return;
     }
 
-    setLoadingState(LoadingState.GeneratingFeedback);
+    setFileUploadState({ files: fileUploadState.files, isProcessing: true, error: null });
     setError(null);
-    setFileUploadState((prev) => ({
-      ...prev,
-      isProcessing: true,
-      error: null,
-    }));
 
     try {
-      const result = await processUploadedFilesForTeaching(
-        ai,
-        fileUploadState.files,
-      );
+      const result = await processUploadedFilesForTeaching(ai, fileUploadState.files);
       setRefinedScenario(result.refinedContent);
+      setFileUploadState({ files: [], isProcessing: false, error: null });
       setCurrentStep("refined");
-      setLoadingState(LoadingState.Done);
-      setFileUploadState((prev) => ({ ...prev, isProcessing: false }));
     } catch (err) {
       console.error("Error processing files:", err);
-      setError(
-        "An error occurred while processing your files. Please try again.",
-      );
-      setLoadingState(LoadingState.Error);
-      setFileUploadState((prev) => ({
-        ...prev,
-        isProcessing: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      }));
+      const errorMsg = err instanceof Error ? err.message : "An error occurred while processing your files. Please try again.";
+      setError(errorMsg);
+      setFileUploadState({ files: fileUploadState.files, isProcessing: false, error: errorMsg });
     }
   };
 
   const isLoading = loadingState === LoadingState.GeneratingFeedback;
 
   return (
-    <div
-      className={`min-h-screen ${
-        theme === "dark" ? "bg-black text-white" : "bg-white text-black"
-      }`}
-    >
+    <>
+      {/* Dedicated Loading UI */}
+      {loadingState === LoadingState.GeneratingFeedback && currentStep === "teaching" && (
+        <LoadingAnalysis 
+          title="Analyzing Your Teaching"
+          subtitle="Evaluating clarity, structure, and educational effectiveness"
+        />
+      )}
+      
+      <div
+        className={`min-h-screen ${
+          theme === "dark" ? "bg-black text-white" : "bg-white text-black"
+        }`}
+      >
       {/* Header */}
       <div
         className={`border-b p-6 ${
@@ -531,10 +526,10 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                     value={userScenario}
                     onChange={(e) => setUserScenario(e.target.value)}
                     placeholder="Type your custom topic here or upload files to extract content..."
-                    className={`w-full h-32 p-4 pr-24 rounded-none border-2 transition-all duration-300 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 group-hover:shadow-lg text-sm sm:text-base ${
+                    className={`w-full h-32 p-4 pr-24 rounded-none border-2 transition-all duration-300 resize-none focus:outline-none group-hover:shadow-lg text-sm sm:text-base ${
                       theme === "dark"
-                        ? "bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-gray-600"
-                        : "bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-gray-300"
+                        ? "bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-white"
+                        : "bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-gray-400"
                     }`}
                     disabled={isLoading}
                   />
@@ -811,10 +806,10 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                 <textarea
                   value={refinedScenario}
                   onChange={(e) => setRefinedScenario(e.target.value)}
-                  className={`w-full min-h-[400px] p-6 rounded-none border-2 transition-all duration-300 resize-none focus:outline-none focus:ring-2 focus:ring-green-500/50 group-hover:shadow-lg text-sm sm:text-base ${
+                  className={`w-full min-h-[400px] p-6 rounded-none border-2 transition-all duration-300 resize-none focus:outline-none group-hover:shadow-lg text-sm sm:text-base ${
                     theme === "dark"
-                      ? "bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-gray-600"
-                      : "bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-gray-300"
+                      ? "bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-white"
+                      : "bg-white/50 border-gray-300 text-black placeholder-gray-500 focus:border-gray-400"
                   }`}
                   placeholder="Your refined teaching content will appear here..."
                 />
@@ -956,7 +951,7 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
                     value={userTeaching}
                     onChange={(e) => setUserTeaching(e.target.value)}
                     placeholder="Explain the topic above as if you're teaching it to a student. Be clear, engaging, and comprehensive... Or click 'Add Chapter' to structure your explanation."
-                    className="w-full h-48 p-4 pr-12 bg-gray-800 border-2 border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-gray-600 resize-none transition-all duration-200 text-sm sm:text-base"
+                    className="w-full h-48 p-4 pr-12 bg-gray-800 border-2 border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:border-white resize-none transition-all duration-200 text-sm sm:text-base"
                     disabled={isLoading}
                   />
                   <div className="absolute top-4 right-4">
@@ -1398,7 +1393,8 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai }) => {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

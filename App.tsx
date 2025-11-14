@@ -264,6 +264,14 @@ const AppContent: React.FC = () => {
     setExplanationStrategy(null);
   }, []);
 
+  const handleImageUpload = useCallback((uploadedImageUrl: string) => {
+    if (import.meta.env.DEV) {
+      console.log("📤 Image uploaded:", uploadedImageUrl);
+    }
+    setImageUrl(uploadedImageUrl);
+    resetState();
+  }, [resetState]);
+
   const fetchNewImage = useCallback(async () => {
     if (import.meta.env.DEV) {
       console.log("🔄 Fetching random image...");
@@ -826,20 +834,20 @@ const AppContent: React.FC = () => {
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                         <button
                           onClick={() => setShowDescribeSection(true)}
-                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold hover:opacity-95 transition-all duration-200 whitespace-nowrap min-h-[44px] touch-manipulation hover:scale-105 active:scale-95 ${
+                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${
                             theme === "dark"
-                              ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:shadow-lg"
-                              : "border-gray-300 bg-white text-black hover:bg-gray-50 hover:shadow-lg"
+                              ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
+                              : "border-gray-300 bg-white text-black hover:bg-gray-50 hover:border-gray-400"
                           }`}
                         >
                           Try Image Describe
                         </button>
                         <button
                           onClick={() => setShowDescribeSection(true)}
-                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold hover:opacity-95 transition-all duration-200 whitespace-nowrap min-h-[44px] touch-manipulation hover:scale-105 active:scale-95 ${
+                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${
                             theme === "dark"
-                              ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:shadow-lg"
-                              : "border-gray-300 bg-white text-black hover:bg-gray-50 hover:shadow-lg"
+                              ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
+                              : "border-gray-300 bg-white text-black hover:bg-gray-50 hover:border-gray-400"
                           }`}
                         >
                           Start Now
@@ -850,79 +858,53 @@ const AppContent: React.FC = () => {
                         <div className="mb-6 flex flex-wrap items-center gap-2">
                           <button
                             onClick={() => setShowTeacherInterface(true)}
-                            className={`rounded-md border px-4 py-2 text-xs font-semibold cursor-pointer hover:translate-y-[-2px] transition-all duration-200 flex items-center space-x-2 ${
+                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
-                                ? "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)]"
-                                : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50 hover:shadow-md"
+                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
                             }`}
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-3.5 w-3.5"
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                            >
-                              <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H15" />
                             </svg>
                             <span>Teacher</span>
                           </button>
                           <button
                             onClick={() => setShowDebaterInterface(true)}
-                            className={`rounded-md border px-4 py-2 text-xs font-semibold cursor-pointer hover:translate-y-[-2px] transition-all duration-200 flex items-center space-x-2 ${
+                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
-                                ? "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)]"
-                                : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50 hover:shadow-md"
+                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
                             }`}
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-3.5 w-3.5"
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h2v2H9V8zm6 0h-2v2h2V8z"
-                                clipRule="evenodd"
-                              />
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                             </svg>
                             <span>Debater</span>
                           </button>
                           <button
                             onClick={() => setShowStorytellerInterface(true)}
-                            className={`rounded-md border px-4 py-2 text-xs font-semibold cursor-pointer hover:translate-y-[-2px] transition-all duration-200 flex items-center space-x-2 ${
+                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
-                                ? "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)]"
-                                : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50 hover:shadow-md"
+                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
                             }`}
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-3.5 w-3.5"
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                            >
-                              <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                             </svg>
                             <span>Storyteller</span>
                           </button>
                           <button
-                            onClick={() =>
-                              setShowGroupDiscussionInterface(true)
-                            }
-                            className={`rounded-md border px-4 py-2 text-xs font-semibold cursor-pointer hover:translate-y-[-2px] transition-all duration-200 flex items-center space-x-2 ${
+                            onClick={() => setShowGroupDiscussionInterface(true)}
+                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
-                                ? "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)]"
-                                : "border-gray-200 bg-white text-gray-800 hover:bg-gray-50 hover:shadow-md"
+                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
                             }`}
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-3.5 w-3.5"
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                            >
-                              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                             </svg>
                             <span>Group Discussion</span>
                           </button>
@@ -1145,6 +1127,14 @@ const AppContent: React.FC = () => {
                             Supportive
                           </div>
                         </div>
+                        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <div className="bg-white text-black px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                            <span>Start</span>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
+                        </div>
                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl" />
                       </button>
 
@@ -1182,6 +1172,14 @@ const AppContent: React.FC = () => {
                             style={{ color: "#d1d5db" }}
                           >
                             Evidence
+                          </div>
+                        </div>
+                        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <div className="bg-white text-black px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                            <span>Start</span>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
                           </div>
                         </div>
                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl" />
@@ -1223,6 +1221,14 @@ const AppContent: React.FC = () => {
                             Expressive
                           </div>
                         </div>
+                        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <div className="bg-white text-black px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                            <span>Start</span>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </div>
+                        </div>
                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl" />
                       </button>
 
@@ -1260,6 +1266,14 @@ const AppContent: React.FC = () => {
                             style={{ color: "#d1d5db" }}
                           >
                             Realistic
+                          </div>
+                        </div>
+                        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <div className="bg-white text-black px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                            <span>Start</span>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
                           </div>
                         </div>
                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl" />
@@ -1331,6 +1345,7 @@ const AppContent: React.FC = () => {
                       ref={imgRef}
                       imageUrl={imageUrl}
                       onNewImage={fetchNewImage}
+                      onImageUpload={handleImageUpload}
                       isLoading={isLoading}
                       domainTitle={activeDomain?.title}
                       domainEmoji={activeDomain?.emoji}

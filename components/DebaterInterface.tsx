@@ -13,6 +13,7 @@ import {
 } from "../services/geminiService";
 import { useTheme } from "../contexts/ThemeContext";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
+import LoadingAnalysis from "./LoadingAnalysis";
 
 interface DebaterInterfaceProps {
   onBack: () => void;
@@ -59,6 +60,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
   );
   const [error, setError] = useState<string | null>(null);
   const [finalEvaluation, setFinalEvaluation] = useState<Feedback | null>(null);
+  const [isEndingDebate, setIsEndingDebate] = useState<boolean>(false);
   const [discussionRound, setDiscussionRound] = useState<number>(0);
   const [userParticipationCount, setUserParticipationCount] =
     useState<number>(0);
@@ -196,6 +198,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
       return;
     }
 
+    setIsEndingDebate(true);
     setLoadingState(LoadingState.GeneratingFeedback);
     setError(null);
 
@@ -220,12 +223,14 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
 
       setCurrentStep("evaluation");
       setLoadingState(LoadingState.Done);
+      setIsEndingDebate(false);
     } catch (err) {
       console.error("Error getting final evaluation:", err);
       setError(
         "An error occurred while getting the final evaluation. Please try again.",
       );
       setLoadingState(LoadingState.Error);
+      setIsEndingDebate(false);
     }
   };
 
@@ -242,6 +247,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
     setUserStance("");
     setAiStance("");
     setFileUploadState({ files: [], isProcessing: false, error: null });
+    setIsEndingDebate(false);
   };
 
   // File handling functions
@@ -310,43 +316,35 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
       return;
     }
 
-    setLoadingState(LoadingState.GeneratingFeedback);
+    setFileUploadState({ files: fileUploadState.files, isProcessing: true, error: null });
     setError(null);
-    setFileUploadState((prev) => ({
-      ...prev,
-      isProcessing: true,
-      error: null,
-    }));
 
     try {
-      const result = await processUploadedFilesForTeaching(
-        ai,
-        fileUploadState.files,
-      );
+      const result = await processUploadedFilesForTeaching(ai, fileUploadState.files);
       setDebateTopic(result.refinedContent);
-      setFileUploadState((prev) => ({ ...prev, isProcessing: false }));
+      setFileUploadState({ files: [], isProcessing: false, error: null });
     } catch (err) {
       console.error("Error processing files:", err);
-      setError(
-        "An error occurred while processing your files. Please try again.",
-      );
-      setLoadingState(LoadingState.Error);
-      setFileUploadState((prev) => ({
-        ...prev,
-        isProcessing: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      }));
+      const errorMsg = err instanceof Error ? err.message : "An error occurred while processing your files. Please try again.";
+      setError(errorMsg);
+      setFileUploadState({ files: fileUploadState.files, isProcessing: false, error: errorMsg });
     }
   };
 
   const isLoading = loadingState === LoadingState.GeneratingFeedback;
 
   return (
-    <div
-      className={`min-h-screen ${
-        theme === "dark" ? "bg-black text-white" : "bg-white text-black"
-      }`}
-    >
+    <>
+      {/* Loading UI - Only when ending debate */}
+      {isEndingDebate && (
+        <LoadingAnalysis title="Analyzing Your Debate Performance" />
+      )}
+      
+      <div
+        className={`min-h-screen ${
+          theme === "dark" ? "bg-black text-white" : "bg-white text-black"
+        }`}
+      >
       {/* Header */}
       <div className="border-b border-gray-200 dark:border-gray-800 p-6">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -616,7 +614,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
                     </div>
                   </div>
                 ))}
-                {isLoading && (
+                {loadingState === LoadingState.GeneratingFeedback && currentStep === "debating" && (
                   <div className="flex justify-start">
                     <div className="bg-gray-700 text-gray-100 px-4 py-3 rounded-lg">
                       <div className="flex items-start space-x-2 sm:space-x-3">
@@ -641,7 +639,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
                     value={currentMessage}
                     onChange={(e) => setCurrentMessage(e.target.value)}
                     placeholder="Make your argument..."
-                    className="w-full p-3 sm:p-4 bg-gray-800 border-2 border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-gray-600 transition-all duration-200 text-sm sm:text-base"
+                    className="w-full p-3 sm:p-4 bg-gray-800 border-2 border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:border-white transition-all duration-200 text-sm sm:text-base"
                     disabled={isLoading}
                     onKeyPress={(e) =>
                       e.key === "Enter" &&
@@ -1006,7 +1004,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
                               "{message.messageContent}"
                             </p>
                           </div>
-                          <div className="grid grid-cols-6 gap-2 mb-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
                             <div className="text-center">
                               <div className="text-xs text-gray-400">Logic</div>
                               <div className="text-sm font-medium">
@@ -1357,7 +1355,8 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai }) => {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

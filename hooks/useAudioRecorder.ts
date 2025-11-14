@@ -43,13 +43,15 @@ const useAudioRecorder = (
   const startRecording = useCallback(async () => {
     try {
       setError(null);
+      console.log('🎤 Starting recording...');
 
       // Check browser support
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error(
-          'MediaDevices API not supported. Please use a modern browser.'
-        );
+        const err = 'MediaDevices API not supported. Please use a modern browser.';
+        console.error('❌', err);
+        throw new Error(err);
       }
+      console.log('✅ MediaDevices API supported');
 
       // Request microphone access
       console.log('🎤 Requesting microphone access...');
@@ -61,7 +63,6 @@ const useAudioRecorder = (
           sampleRate: 16000,
         },
       });
-
       console.log('✅ Microphone access granted');
       mediaStreamRef.current = stream;
 
@@ -76,11 +77,9 @@ const useAudioRecorder = (
       ];
 
       if (!MediaRecorder.isTypeSupported(mimeType)) {
-        console.warn(`⚠️ ${mimeType} not supported, finding alternative...`);
         recordMimeType =
           supportedTypes.find((type) => MediaRecorder.isTypeSupported(type)) ||
           '';
-        console.log(`✅ Using ${recordMimeType}`);
       }
 
       // Create MediaRecorder
@@ -95,18 +94,15 @@ const useAudioRecorder = (
       // Handle data available
       mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
-          console.log(`📦 Audio chunk received: ${event.data.size} bytes`);
           chunksRef.current.push(event.data);
         }
       };
 
       // Handle recording stop
       mediaRecorder.onstop = () => {
-        console.log('🛑 Recording stopped, processing audio...');
         const blob = new Blob(chunksRef.current, { type: recordMimeType });
         const url = URL.createObjectURL(blob);
 
-        console.log(`✅ Audio blob created: ${blob.size} bytes`);
         setAudioBlob(blob);
         setAudioURL(url);
         setIsRecording(false);
@@ -126,7 +122,6 @@ const useAudioRecorder = (
       // Handle errors
       mediaRecorder.onerror = (event: Event) => {
         const errorEvent = event as ErrorEvent;
-        console.error('❌ MediaRecorder error:', errorEvent);
         const errorMessage = errorEvent.error?.message || 'Recording error';
         setError(errorMessage);
         setIsRecording(false);
@@ -138,12 +133,12 @@ const useAudioRecorder = (
 
       // Start recording
       mediaRecorder.start(1000); // Collect data every second
-      console.log('🎙️ Recording started!');
+      console.log('✅ Recording started with mime type:', recordMimeType);
       setIsRecording(true);
       setIsPaused(false);
     } catch (err) {
       const error = err as Error;
-      console.error('❌ Failed to start recording:', error);
+      console.error('❌ Recording error:', error);
 
       let errorMessage = 'Failed to start recording';
 
@@ -171,7 +166,6 @@ const useAudioRecorder = (
   }, [mimeType, audioBitsPerSecond, onDataAvailable, onError]);
 
   const stopRecording = useCallback(() => {
-    console.log('🛑 Stopping recording...');
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== 'inactive'
@@ -181,32 +175,26 @@ const useAudioRecorder = (
   }, []);
 
   const pauseRecording = useCallback(() => {
-    console.log('⏸️ Pausing recording...');
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state === 'recording'
     ) {
       mediaRecorderRef.current.pause();
       setIsPaused(true);
-      console.log('✅ Recording paused');
     }
   }, []);
 
   const resumeRecording = useCallback(() => {
-    console.log('▶️ Resuming recording...');
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state === 'paused'
     ) {
       mediaRecorderRef.current.resume();
       setIsPaused(false);
-      console.log('✅ Recording resumed');
     }
   }, []);
 
   const clearRecording = useCallback(() => {
-    console.log('🗑️ Clearing recording...');
-
     // Revoke URL to free memory
     if (audioURL) {
       URL.revokeObjectURL(audioURL);
@@ -216,7 +204,6 @@ const useAudioRecorder = (
     setAudioURL(null);
     setError(null);
     chunksRef.current = [];
-    console.log('✅ Recording cleared');
   }, [audioURL]);
 
   return {

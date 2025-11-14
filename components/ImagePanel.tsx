@@ -5,6 +5,7 @@ import { useTheme } from "../contexts/ThemeContext";
 interface ImagePanelProps {
   imageUrl: string;
   onNewImage: () => void;
+  onImageUpload?: (imageUrl: string) => void;
   isLoading: boolean;
   domainTitle?: string;
   domainEmoji?: string;
@@ -16,6 +17,7 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
     {
       imageUrl,
       onNewImage,
+      onImageUpload,
       isLoading,
       domainTitle,
       domainEmoji,
@@ -27,6 +29,7 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
     const showDomainDetails = Boolean(domainTitle);
     const [imageError, setImageError] = React.useState(false);
     const [retryCount, setRetryCount] = React.useState(0);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     // Reset error state when imageUrl changes
     React.useEffect(() => {
@@ -50,6 +53,43 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
       console.log("Image loaded successfully:", imageUrl);
       setImageError(false);
       setRetryCount(0);
+    };
+
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          alert('Please select a valid image file');
+          return;
+        }
+        
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          alert('Image file must be less than 5MB');
+          return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          if (result && onImageUpload) {
+            onImageUpload(result);
+          }
+        };
+        reader.onerror = () => {
+          alert('Error reading file. Please try again.');
+        };
+        reader.readAsDataURL(file);
+      }
+      // Reset input value to allow same file upload again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    };
+
+    const handleUploadClick = () => {
+      fileInputRef.current?.click();
     };
 
     return (
@@ -91,19 +131,48 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onNewImage}
-            disabled={isLoading}
-            className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-              theme === "dark"
-                ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
-                : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
-            }`}
-            aria-label="Get new image"
-          >
-            <PlusIcon className="h-5 w-5" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onNewImage}
+              disabled={isLoading}
+              className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                theme === "dark"
+                  ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
+                  : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
+              }`}
+              aria-label="Get new image"
+            >
+              <PlusIcon className="h-5 w-5" />
+            </button>
+            {onImageUpload && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  aria-label="Upload image file"
+                />
+                <button
+                  type="button"
+                  onClick={handleUploadClick}
+                  disabled={isLoading}
+                  className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                    theme === "dark"
+                      ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
+                      : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
+                  }`}
+                  aria-label="Upload your own image"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div
           className={`relative aspect-[4/3] overflow-hidden rounded-2xl ${theme === "dark" ? "bg-gray-900" : "bg-gray-100"}`}

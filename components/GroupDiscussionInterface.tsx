@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
-import { CoachMode, Feedback, LoadingState } from "../types";
+import { CoachMode, Feedback, LoadingState, UploadedFile, FileUploadState } from "../types";
 import {
   getGroupDiscussionResponse,
   getGroupDiscussionEvaluation,
+  processUploadedFilesForTeaching,
 } from "../services/geminiService";
 import { useTheme } from "../contexts/ThemeContext";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
@@ -83,7 +84,14 @@ const GroupDiscussionInterface: React.FC<GroupDiscussionInterfaceProps> = ({
     useState<number>(0);
   const [isAIActive, setIsAIActive] = useState<boolean>(false);
 
+  const [fileUploadState, setFileUploadState] = useState<FileUploadState>({
+    files: [],
+    isProcessing: false,
+    error: null,
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -355,11 +363,78 @@ const GroupDiscussionInterface: React.FC<GroupDiscussionInterfaceProps> = ({
     setActiveAgents([]);
     setDiscussionRound(0);
     setUserParticipationCount(0);
+    setFileUploadState({ files: [], isProcessing: false, error: null });
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file: File) => {
+      if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
+        setFileUploadState((prev) => ({ ...prev, error: `Unsupported file type: ${file.type}. Please upload images or PDF files only.` }));
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        setFileUploadState((prev) => ({ ...prev, error: `File ${file.name} is too large. Maximum size is 10MB.` }));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        const base64Content = content.split(",")[1];
+
+        const uploadedFile: UploadedFile = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          content: base64Content,
+          mimeType: file.type,
+        };
+
+        setFileUploadState((prev) => ({ ...prev, files: [...prev.files, uploadedFile], error: null }));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeFile = (fileId: string) => {
+    setFileUploadState((prev) => ({ ...prev, files: prev.files.filter((f) => f.id !== fileId) }));
+  };
+
+  const handleFileSubmit = async () => {
+    if (fileUploadState.files.length === 0) {
+      setError("Please upload at least one file.");
+      return;
+    }
+
+    if (!ai) {
+      setError("AI service not available. Please check your API key.");
+      return;
+    }
+
+    setFileUploadState({ files: fileUploadState.files, isProcessing: true, error: null });
+    setError(null);
+
+    try {
+      const result = await processUploadedFilesForTeaching(ai, fileUploadState.files);
+      setDiscussionTopic(result.refinedContent);
+      setFileUploadState({ files: [], isProcessing: false, error: null });
+    } catch (err) {
+      console.error("Error processing files:", err);
+      const errorMsg = err instanceof Error ? err.message : "An error occurred while processing your files. Please try again.";
+      setError(errorMsg);
+      setFileUploadState({ files: fileUploadState.files, isProcessing: false, error: errorMsg });
+    }
   };
 
   const isLoading = loadingState === LoadingState.GeneratingFeedback;
 
   return (
+    <>
     <div
       className={`min-h-screen ${
         theme === "dark" ? "bg-black text-white" : "bg-white text-black"
@@ -471,8 +546,8 @@ const GroupDiscussionInterface: React.FC<GroupDiscussionInterfaceProps> = ({
                 <textarea
                   value={discussionTopic}
                   onChange={(e) => setDiscussionTopic(e.target.value)}
-                  placeholder="Example: 'The impact of AI on education' or 'Remote work vs office work' or 'Climate change solutions' or 'The future of social media'..."
-                  className={`w-full h-32 p-4 pr-12 border-2 rounded-none focus:outline-none resize-none transition-all duration-200 text-sm sm:text-base focus:ring-2 ${
+                  placeholder="Type your discussion topic or upload files to extract content..."
+                  className={`w-full h-32 p-4 pr-24 border-2 rounded-none focus:outline-none resize-none transition-all duration-200 text-sm sm:text-base focus:ring-2 ${
                     theme === "dark"
                       ? "bg-gray-800 border-gray-600 text-white placeholder-gray-400 focus:border-gray-600 focus:ring-white/30"
                       : "bg-white border-gray-300 text-black placeholder-gray-500 focus:border-gray-300 focus:ring-blue-500/30"
@@ -480,29 +555,85 @@ const GroupDiscussionInterface: React.FC<GroupDiscussionInterfaceProps> = ({
                   disabled={isLoading}
                 />
 
-                {/* Voice Recorder */}
-                <div className="absolute top-4 right-4">
+                {/* Voice Recorder and File Upload */}
+                <div className="absolute top-4 right-4 flex space-x-2">
                   <CustomVoiceRecorder
                     onTranscript={handleTopicTranscript}
                     disabled={isLoading}
                   />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,application/pdf"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`p-2 transition-colors duration-200 rounded-lg ${
+                      theme === "dark"
+                        ? "text-gray-400 hover:text-white hover:bg-gray-700"
+                        : "text-gray-500 hover:text-black hover:bg-gray-200"
+                    }`}
+                    title="Upload files (images/PDFs)"
+                    disabled={isLoading}
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  </button>
                 </div>
               </div>
+
+              {/* File List */}
+              {fileUploadState.files.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h4 className={`text-sm font-medium ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}>
+                    Uploaded Files:
+                  </h4>
+                  <div className="space-y-2">
+                    {fileUploadState.files.map((file) => (
+                      <div key={file.id} className={`flex items-center justify-between rounded-lg p-2 ${theme === "dark" ? "bg-gray-900/50" : "bg-gray-100"}`}>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-lg">{file.type.startsWith("image/") ? "🖼️" : "📄"}</div>
+                          <div>
+                            <div className={`text-sm font-medium ${theme === "dark" ? "text-white" : "text-black"}`}>{file.name}</div>
+                            <div className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>{(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                          </div>
+                        </div>
+                        <button onClick={() => removeFile(file.id)} className="text-red-400 hover:text-red-300 transition-colors duration-200 p-1" disabled={isLoading}>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* File Upload Error */}
+              {fileUploadState.error && (
+                <div className="mt-4 bg-red-900/50 border border-red-800 rounded-lg p-3 text-red-200 text-sm">
+                  {fileUploadState.error}
+                </div>
+              )}
             </div>
 
             <div className="text-center">
               <button
-                onClick={handleTopicSubmit}
-                disabled={isLoading || !discussionTopic.trim()}
+                onClick={fileUploadState.files.length > 0 ? handleFileSubmit : handleTopicSubmit}
+                disabled={isLoading || (fileUploadState.files.length === 0 && !discussionTopic.trim()) || fileUploadState.isProcessing}
                 className="px-8 py-3 bg-white text-black rounded-lg font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
               >
-                {isLoading ? (
+                {isLoading || fileUploadState.isProcessing ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-black mr-2 inline-block"></div>
-                    Starting Discussion...
+                    {fileUploadState.files.length > 0 ? "Processing Files..." : "Starting Discussion..."}
                   </>
                 ) : (
-                  "Start Group Discussion"
+                  fileUploadState.files.length > 0 ? "Extract & Start Discussion" : "Start Group Discussion"
                 )}
               </button>
             </div>
@@ -619,7 +750,7 @@ const GroupDiscussionInterface: React.FC<GroupDiscussionInterfaceProps> = ({
                     value={currentMessage}
                     onChange={(e) => setCurrentMessage(e.target.value)}
                     placeholder="Contribute to the discussion..."
-                    className="w-full p-3 bg-gray-800 border border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:border-white/50 transition-colors duration-200"
+                    className="w-full p-3 bg-gray-800 border-2 border-gray-600 rounded-none text-white placeholder-gray-400 focus:outline-none focus:border-white transition-colors duration-200"
                     disabled={isLoading || isAIActive}
                     onKeyPress={(e) =>
                       e.key === "Enter" &&
@@ -902,6 +1033,7 @@ const GroupDiscussionInterface: React.FC<GroupDiscussionInterfaceProps> = ({
         )}
       </div>
     </div>
+    </>
   );
 };
 

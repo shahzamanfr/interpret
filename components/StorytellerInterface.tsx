@@ -14,6 +14,7 @@ import {
 } from "../services/geminiService";
 import { useTheme } from "../contexts/ThemeContext";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
+import LoadingAnalysis from "./LoadingAnalysis";
 
 interface StorytellerInterfaceProps {
   onBack: () => void;
@@ -132,7 +133,7 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
+    Array.from(files).forEach((file: File) => {
       // Check file type
       if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
         setFileUploadState((prev) => ({
@@ -193,43 +194,38 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
       return;
     }
 
-    setLoadingState(LoadingState.GeneratingFeedback);
+    setFileUploadState({ files: fileUploadState.files, isProcessing: true, error: null });
     setError(null);
-    setFileUploadState((prev) => ({
-      ...prev,
-      isProcessing: true,
-      error: null,
-    }));
 
     try {
-      const result = await processUploadedFilesForTeaching(
-        ai,
-        fileUploadState.files,
-      );
+      const result = await processUploadedFilesForTeaching(ai, fileUploadState.files);
       setUserScenario(result.refinedContent);
-      setFileUploadState((prev) => ({ ...prev, isProcessing: false }));
+      setFileUploadState({ files: [], isProcessing: false, error: null });
     } catch (err) {
       console.error("Error processing files:", err);
-      setError(
-        "An error occurred while processing your files. Please try again.",
-      );
-      setLoadingState(LoadingState.Error);
-      setFileUploadState((prev) => ({
-        ...prev,
-        isProcessing: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      }));
+      const errorMsg = err instanceof Error ? err.message : "An error occurred while processing your files. Please try again.";
+      setError(errorMsg);
+      setFileUploadState({ files: fileUploadState.files, isProcessing: false, error: errorMsg });
     }
   };
 
   const isLoading = loadingState === LoadingState.GeneratingFeedback;
 
   return (
-    <div
-      className={`min-h-screen ${
-        theme === "dark" ? "bg-black text-white" : "bg-white text-black"
-      }`}
-    >
+    <>
+      {/* Dedicated Loading UI */}
+      {loadingState === LoadingState.GeneratingFeedback && currentStep === "storytelling" && (
+        <LoadingAnalysis 
+          title="Analyzing Your Storytelling"
+          subtitle="Evaluating creativity, emotion, and narrative flow"
+        />
+      )}
+      
+      <div
+        className={`min-h-screen ${
+          theme === "dark" ? "bg-black text-white" : "bg-white text-black"
+        }`}
+      >
       {/* Header */}
       <div className="border-b border-gray-200 dark:border-gray-800 p-6">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -887,7 +883,8 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 
