@@ -1,4 +1,4 @@
-# 🎯 AI Communication Coach
+# 🎯 Open Voice
 
 A powerful AI-powered platform to help you improve your communication skills through interactive practice with multiple coaching modes.
 
@@ -29,7 +29,7 @@ A powerful AI-powered platform to help you improve your communication skills thr
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd ai-communication-coach
+cd open-voice
 
 # Install dependencies
 npm install

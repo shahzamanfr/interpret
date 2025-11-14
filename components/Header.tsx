@@ -1,5 +1,4 @@
 import React from "react";
-import StarIcon from "./icons/StarIcon";
 import { useTheme } from "../contexts/ThemeContext";
 
 const Header: React.FC = () => {
@@ -15,17 +14,28 @@ const Header: React.FC = () => {
         }`}
       >
         <div className="flex items-center space-x-3">
-          <StarIcon
+          <svg
             className={`w-6 h-6 ${
               theme === "dark" ? "text-white" : "text-black"
             }`}
-          />
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+            />
+          </svg>
           <h1
-            className={`text-[1.05rem] font-semibold tracking-tight ${
+            className={`text-xl font-bold tracking-wide ${
               theme === "dark" ? "text-white" : "text-black"
             }`}
+            style={{ fontFamily: '"Space Grotesk", system-ui, sans-serif' }}
           >
-            Communication Coach
+            Open Voice
           </h1>
         </div>
         {/* Theme Toggle Button */}

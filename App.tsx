@@ -804,7 +804,7 @@ const AppContent: React.FC = () => {
                           theme === "dark" ? "text-gray-600" : "text-gray-500"
                         }`}
                       >
-                        AI COMMUNICATION COACH
+                        OPEN VOICE
                       </p>
                       <h2
                         className={`text-[3rem] sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight ${
@@ -837,7 +837,7 @@ const AppContent: React.FC = () => {
                           className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${
                             theme === "dark"
                               ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
-                              : "border-gray-300 bg-white text-black hover:bg-gray-50 hover:border-gray-400"
+                              : "border-gray-800 bg-black text-white hover:bg-gray-900 hover:border-gray-700"
                           }`}
                         >
                           Try Image Describe
@@ -847,7 +847,7 @@ const AppContent: React.FC = () => {
                           className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${
                             theme === "dark"
                               ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
-                              : "border-gray-300 bg-white text-black hover:bg-gray-50 hover:border-gray-400"
+                              : "border-gray-800 bg-black text-white hover:bg-gray-900 hover:border-gray-700"
                           }`}
                         >
                           Start Now
@@ -858,10 +858,10 @@ const AppContent: React.FC = () => {
                         <div className="mb-6 flex flex-wrap items-center gap-2">
                           <button
                             onClick={() => setShowTeacherInterface(true)}
-                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
                                 ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
+                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
                             }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -871,10 +871,10 @@ const AppContent: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setShowDebaterInterface(true)}
-                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
                                 ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
+                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
                             }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -884,10 +884,10 @@ const AppContent: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setShowStorytellerInterface(true)}
-                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
                                 ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
+                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
                             }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -897,10 +897,10 @@ const AppContent: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setShowGroupDiscussionInterface(true)}
-                            className={`group relative overflow-hidden border px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
                               theme === "dark"
                                 ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-400 bg-gray-300 text-gray-800 hover:bg-gray-400 hover:shadow-md hover:shadow-gray-400/20"
+                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
                             }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -963,7 +963,7 @@ const AppContent: React.FC = () => {
                                   : "text-gray-600"
                               }`}
                             >
-                              AI Communication Coach helps you turn fuzzy
+                              Open Voice helps you turn fuzzy
                               thoughts into crisp explanations. Practice on
                               realistic visuals, write your take, and get
                               instant feedback on clarity, structure, and
