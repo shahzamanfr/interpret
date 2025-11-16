@@ -98,7 +98,7 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
           
           // Update the accumulated final transcript
           if (finalTranscript) {
-            finalTranscriptRef.current = finalTranscript;
+            finalTranscriptRef.current += finalTranscript;
           }
           
           // Combine accumulated final + current interim
@@ -139,8 +139,7 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
       };
       
       mediaRecorder.onstop = async () => {
-        console.log('🛑 Recording stopped. Processing audio...');
-        setStatus('Getting final accurate transcription...');
+        console.log('🛑 Recording stopped');
         
         // Stop Web Speech API
         if (webSpeechRecognitionRef.current) {
@@ -152,59 +151,21 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
           }
         }
         
-        // Create audio blob
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        console.log('📊 Total audio size:', audioBlob.size, 'bytes');
+        // Use the accumulated transcript from Web Speech API
+        console.log('📝 Final transcript:', finalTranscriptRef.current);
+        setStatus('Done!');
         
-        if (audioBlob.size < 1000) {
-          console.warn('⚠️ Audio too short, using interim transcript');
-          setStatus('');
-          if (interimTranscriptRef.current) {
-            onTranscript(interimTranscriptRef.current.trim());
-          }
-          return;
+        if (finalTranscriptRef.current.trim()) {
+          onTranscript(finalTranscriptRef.current.trim());
+        } else if (interimTranscriptRef.current.trim()) {
+          onTranscript(interimTranscriptRef.current.trim());
         }
         
-        // Send to backend for final accurate transcription
-        try {
-          const formData = new FormData();
-          formData.append('audio', audioBlob, 'recording.webm');
-          
-          console.log('📤 Sending audio for final transcription...');
-          setStatus('Refining transcription...');
-          
-          const response = await fetch('http://localhost:8787/api/speech/transcribe', {
-            method: 'POST',
-            body: formData,
-          });
-          
-          if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-          }
-          
-          const data = await response.json();
-          console.log('✅ Final transcription received:', data);
-          
-          if (data.success && data.text) {
-            console.log('📝 Final accurate transcript:', data.text);
-            setStatus('Done!');
-            onTranscript(data.text); // Replace with accurate version
-            setTimeout(() => setStatus(''), 2000);
-          } else {
-            throw new Error(data.message || 'Transcription failed');
-          }
-        } catch (error: any) {
-          console.error('❌ Transcription error:', error);
-          console.log('📝 Using interim transcript as fallback');
-          setStatus('');
-          // Keep the interim transcript if API fails
-          if (!interimTranscriptRef.current) {
-            onError?.(error.message || 'Failed to transcribe audio');
-          }
-        }
+        setTimeout(() => setStatus(''), 1000);
         
         // Cleanup
         stream.getTracks().forEach(track => track.stop());
+        finalTranscriptRef.current = '';
         interimTranscriptRef.current = '';
       };
       
