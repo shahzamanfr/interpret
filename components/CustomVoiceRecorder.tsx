@@ -5,11 +5,13 @@ import { useCustomSpeechRecognition } from "../hooks/useCustomSpeechRecognition"
 interface CustomVoiceRecorderProps {
   onTranscript: (text: string) => void;
   disabled?: boolean;
+  onRecordingChange?: (isRecording: boolean) => void;
 }
 
 const CustomVoiceRecorder: React.FC<CustomVoiceRecorderProps> = ({
   onTranscript,
   disabled,
+  onRecordingChange,
 }) => {
   const { theme } = useTheme();
   const [error, setError] = React.useState<string | null>(null);
@@ -27,10 +29,17 @@ const CustomVoiceRecorder: React.FC<CustomVoiceRecorderProps> = ({
       },
     });
 
+  React.useEffect(() => {
+    onRecordingChange?.(isRecording);
+  }, [isRecording, onRecordingChange]);
+
   const handleClick = () => {
+    console.log('🔘 Mic button clicked, isRecording:', isRecording);
     if (isRecording) {
+      console.log('⏹️ Calling stopRecording');
       stopRecording();
     } else {
+      console.log('▶️ Calling startRecording');
       setError(null);
       startRecording();
     }

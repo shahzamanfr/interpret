@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎤 Microphone + Backend Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        h1 { margin-top: 0; text-align: center; }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+        .info { background: rgba(59, 130, 246, 0.3); }
+        .success { background: rgba(34, 197, 94, 0.3); }
+        .error { background: rgba(239, 68, 68, 0.3); }
+        .warning { background: rgba(251, 191, 36, 0.3); }
+        button {
+            width: 100%;
+            padding: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 10px 0;
+        }
+        .record-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .record-btn:hover { transform: scale(1.02); }
+        .record-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .recording { background: #ef4444 !important; animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .audio-level {
+            height: 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .audio-level-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #3b82f6);
+            transition: width 0.1s;
+        }
+        .transcript {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            min-height: 100px;
+            margin: 15px 0;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .steps {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .steps ol { margin: 10px 0; padding-left: 20px; }
+        .steps li { margin: 8px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Microphone + Backend Test</h1>
+        
+        <div class="steps">
+            <strong>📋 How to test:</strong>
+            <ol>
+                <li>Make sure backend is running on port 8787</li>
+                <li>Click "Start Recording" button</li>
+                <li>Allow microphone access when prompted</li>
+                <li>Speak clearly for 3-5 seconds</li>
+                <li>Click "Stop Recording"</li>
+                <li>Wait for transcription result</li>
+            </ol>
+        </div>
+
+        <div id="status" class="status info">
+            ℹ️ Ready to test. Click button below to start.
+        </div>
+
+        <div class="audio-level">
+            <div id="audioLevelBar" class="audio-level-bar" style="width: 0%"></div>
+        </div>
+
+        <button id="recordBtn" class="record-btn">
+            🎤 Start Recording
+        </button>
+
+        <div class="transcript">
+            <strong>Transcription will appear here...</strong>
+            <div id="transcript"></div>
+        </div>
+
+        <div id="debug" style="font-size: 12px; opacity: 0.7; margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        const recordBtn = document.getElementById('recordBtn');
+        const statusDiv = document.getElementById('status');
+        const transcriptDiv = document.getElementById('transcript');
+        const audioLevelBar = document.getElementById('audioLevelBar');
+        const debugDiv = document.getElementById('debug');
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let mediaStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let animationFrame = null;
+        let startTime = 0;
+
+        function log(message, type = 'info') {
+            console.log(message);
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            debugDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${message}</div>`;
+        }
+
+        function monitorAudioLevel(stream) {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const microphone = audioContext.createMediaStreamSource(stream);
+                analyser.fftSize = 256;
+                microphone.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                function checkLevel() {
+                    if (!analyser) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    audioLevelBar.style.width = Math.min(average * 2, 100) + '%';
+                    animationFrame = requestAnimationFrame(checkLevel);
+                }
+                checkLevel();
+            } catch (err) {
+                console.error('Audio monitoring error:', err);
+            }
+        }
+
+        async function startRecording() {
+            try {
+                log('🎤 Requesting microphone access...', 'info');
+                
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                log('✅ Microphone access granted!', 'success');
+                monitorAudioLevel(mediaStream);
+
+                let mimeType = 'audio/webm';
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                }
+
+                audioChunks = [];
+                mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+                startTime = Date.now();
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunks.push(e.data);
+                        console.log('📦 Chunk received:', e.data.size, 'bytes');
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const duration = (Date.now() - startTime) / 1000;
+                    log(`📤 Recording stopped. Duration: ${duration.toFixed(1)}s`, 'info');
+
+                    if (duration < 2) {
+                        log('⚠️ Recording too short! Please speak for at least 3 seconds.', 'warning');
+                        return;
+                    }
+
+                    const blob = new Blob(audioChunks, { type: mimeType });
+                    log(`📦 Audio blob created: ${blob.size} bytes`, 'info');
+
+                    if (blob.size < 1000) {
+                        log('❌ Audio file too small. Microphone may not be working.', 'error');
+                        return;
+                    }
+
+                    await sendToBackend(blob);
+                };
+
+                mediaRecorder.start(1000);
+                log('🔴 Recording... Speak now!', 'success');
+                recordBtn.textContent = '⏹️ Stop Recording';
+                recordBtn.classList.add('recording');
+
+            } catch (err) {
+                console.error('Error:', err);
+                let errorMsg = 'Microphone access denied';
+                if (err.name === 'NotAllowedError') {
+                    errorMsg = '🚫 Please allow microphone access in your browser';
+                } else if (err.name === 'NotFoundError') {
+                    errorMsg = '🎤 No microphone found. Please connect a microphone.';
+                } else if (err.name === 'NotReadableError') {
+                    errorMsg = '⚠️ Microphone is being used by another application';
+                }
+                log(errorMsg, 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+            audioLevelBar.style.width = '0%';
+            recordBtn.textContent = '🎤 Start Recording';
+            recordBtn.classList.remove('recording');
+        }
+
+        async function sendToBackend(blob) {
+            try {
+                log('🚀 Sending to backend...', 'info');
+                
+                const formData = new FormData();
+                formData.append('audio', blob, 'recording.webm');
+
+                const response = await fetch('http://localhost:8787/api/speech/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                console.log('Response:', data);
+
+                if (!response.ok) {
+                    log(`❌ Backend error: ${data.message || data.error}`, 'error');
+                    transcriptDiv.innerHTML = `<strong style="color: #ef4444;">Error:</strong> ${data.message || data.error}`;
+                    return;
+                }
+
+                if (data.text && data.text.trim()) {
+                    log('✅ Transcription successful!', 'success');
+                    transcriptDiv.innerHTML = `<strong>You said:</strong><br>"${data.text}"<br><br><small>Provider: ${data.provider} | Confidence: ${(data.confidence * 100).toFixed(1)}%</small>`;
+                } else {
+                    log('⚠️ No speech detected. Please speak louder and clearer.', 'warning');
+                    transcriptDiv.innerHTML = '<strong style="color: #f59e0b;">No speech detected.</strong> Try speaking louder and clearer.';
+                }
+
+            } catch (err) {
+                console.error('Backend error:', err);
+                log('❌ Failed to connect to backend. Is it running on port 8787?', 'error');
+                transcriptDiv.innerHTML = `<strong style="color: #ef4444;">Connection Error:</strong> ${err.message}<br><br>Make sure backend is running: <code>cd backend && npm start</code>`;
+            }
+        }
+
+        recordBtn.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+
+        // Check backend on load
+        fetch('http://localhost:8787/api/health')
+            .then(res => res.json())
+            .then(data => {
+                log('✅ Backend is running and ready!', 'success');
+            })
+            .catch(err => {
+                log('⚠️ Backend not detected. Start it with: cd backend && npm start', 'warning');
+            });
+    </script>
+</body>
+</html>

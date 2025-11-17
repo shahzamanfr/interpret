@@ -66,20 +66,26 @@ const useAudioRecorder = (
       console.log('✅ Microphone access granted');
       mediaStreamRef.current = stream;
 
-      // Determine best mime type
-      let recordMimeType = mimeType;
+      // Determine best mime type for cross-browser compatibility
+      let recordMimeType = '';
       const supportedTypes = [
-        'audio/webm',
         'audio/webm;codecs=opus',
+        'audio/webm',
         'audio/ogg;codecs=opus',
         'audio/mp4',
-        'audio/wav',
+        'audio/mpeg',
       ];
 
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        recordMimeType =
-          supportedTypes.find((type) => MediaRecorder.isTypeSupported(type)) ||
-          '';
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          recordMimeType = type;
+          console.log('✅ Using MIME type:', type);
+          break;
+        }
+      }
+
+      if (!recordMimeType) {
+        throw new Error('No supported audio format found in this browser');
       }
 
       // Create MediaRecorder

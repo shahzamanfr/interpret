@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Backend Test - Microphone</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
+        button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; }
+        .recording { background: red; color: white; }
+        .idle { background: blue; color: white; }
+        #status { padding: 10px; margin: 10px 0; border: 1px solid #ccc; min-height: 50px; }
+        #result { padding: 10px; margin: 10px 0; border: 1px solid green; min-height: 100px; background: #f0f0f0; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Backend Microphone Test</h1>
+    <p>This tests if your backend server is working correctly.</p>
+    
+    <button id="testBtn" class="idle" onclick="testBackend()">Test Backend Connection</button>
+    <button id="recordBtn" class="idle" onclick="toggleRecording()">Start Recording</button>
+    
+    <div id="status">Status: Ready</div>
+    <div id="result">Result will appear here...</div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        async function testBackend() {
+            const status = document.getElementById('status');
+            status.innerHTML = '⏳ Testing backend...';
+            
+            try {
+                const response = await fetch('http://localhost:8787/api/health');
+                const data = await response.json();
+                
+                if (data.ok) {
+                    status.innerHTML = '<span class="success">✅ Backend is running!</span>';
+                } else {
+                    status.innerHTML = '<span class="error">❌ Backend responded but not OK</span>';
+                }
+            } catch (error) {
+                status.innerHTML = '<span class="error">❌ Backend not running! Start it with START-BACKEND.bat</span>';
+            }
+        }
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            const status = document.getElementById('status');
+            const btn = document.getElementById('recordBtn');
+            
+            try {
+                status.innerHTML = '🎤 Requesting microphone...';
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                status.innerHTML = '🔴 Recording... Speak now!';
+                btn.textContent = 'Stop Recording';
+                btn.className = 'recording';
+                
+                audioChunks = [];
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    status.innerHTML = '📤 Sending to backend...';
+                    
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append('audio', blob, 'audio.webm');
+                    
+                    try {
+                        const response = await fetch('http://localhost:8787/api/speech/transcribe', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.text) {
+                            status.innerHTML = '<span class="success">✅ Transcription complete!</span>';
+                            document.getElementById('result').innerHTML = 
+                                `<strong>Transcription:</strong><br>${data.text}<br><br>` +
+                                `<small>Provider: ${data.provider} | Confidence: ${data.confidence}</small>`;
+                        } else {
+                            status.innerHTML = '<span class="error">⚠️ No speech detected</span>';
+                            document.getElementById('result').innerHTML = 'No speech detected. Try speaking louder or longer.';
+                        }
+                    } catch (error) {
+                        status.innerHTML = '<span class="error">❌ Backend error!</span>';
+                        document.getElementById('result').innerHTML = 
+                            `<span class="error">Error: ${error.message}<br><br>` +
+                            `Make sure backend is running: START-BACKEND.bat</span>`;
+                    }
+                    
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                
+            } catch (error) {
+                status.innerHTML = '<span class="error">❌ Microphone error!</span>';
+                document.getElementById('result').innerHTML = 
+                    `<span class="error">Error: ${error.message}<br><br>` +
+                    `Please allow microphone access in your browser.</span>`;
+            }
+        }
+
+        function stopRecording() {
+            const btn = document.getElementById('recordBtn');
+            
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.textContent = 'Start Recording';
+                btn.className = 'idle';
+            }
+        }
+
+        // Test backend on load
+        window.onload = () => {
+            testBackend();
+        };
+    </script>
+</body>
+</html>

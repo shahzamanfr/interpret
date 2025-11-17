@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphone Test - Fixed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .test-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .test-section h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        button.recording {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .audio-level {
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .audio-level-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .capabilities {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .capability {
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        
+        .capability.yes {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .capability.no {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .transcript {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            min-height: 60px;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .transcript.empty {
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Microphone Test</h1>
+        <p class="subtitle">Test your microphone and speech recognition</p>
+        
+        <!-- Browser Capabilities -->
+        <div class="test-section">
+            <h2>1. Browser Capabilities</h2>
+            <div id="capabilities"></div>
+        </div>
+        
+        <!-- Microphone Permission -->
+        <div class="test-section">
+            <h2>2. Microphone Permission</h2>
+            <button id="testPermission">Test Microphone Access</button>
+            <div id="permissionStatus"></div>
+            <div class="audio-level" style="display: none;" id="audioLevelContainer">
+                <div class="audio-level-bar" id="audioLevelBar">0</div>
+            </div>
+        </div>
+        
+        <!-- Recording Test -->
+        <div class="test-section">
+            <h2>3. Recording Test</h2>
+            <button id="startRecording">Start Recording</button>
+            <button id="stopRecording" disabled>Stop Recording</button>
+            <div id="recordingStatus"></div>
+        </div>
+        
+        <!-- Speech Recognition Test -->
+        <div class="test-section">
+            <h2>4. Speech Recognition Test</h2>
+            <button id="startSpeech">Start Speech Recognition</button>
+            <button id="stopSpeech" disabled>Stop Speech Recognition</button>
+            <div id="speechStatus"></div>
+            <div class="transcript empty" id="transcript">Speak something...</div>
+        </div>
+    </div>
+
+    <script>
+        // Check capabilities
+        function checkCapabilities() {
+            const caps = {
+                mediaDevices: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+                speechRecognition: !!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window),
+                mediaRecorder: !!window.MediaRecorder,
+                audioContext: !!(window.AudioContext || window.webkitAudioContext)
+            };
+            
+            const mimeTypes = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/ogg;codecs=opus',
+                'audio/mp4'
+            ];
+            
+            const supportedTypes = mimeTypes.filter(type => 
+                window.MediaRecorder && MediaRecorder.isTypeSupported(type)
+            );
+            
+            const html = `
+                <div class="capabilities">
+                    <div class="capability ${caps.mediaDevices ? 'yes' : 'no'}">
+                        ${caps.mediaDevices ? '✅' : '❌'} MediaDevices API
+                    </div>
+                    <div class="capability ${caps.speechRecognition ? 'yes' : 'no'}">
+                        ${caps.speechRecognition ? '✅' : '❌'} Speech Recognition
+                    </div>
+                    <div class="capability ${caps.mediaRecorder ? 'yes' : 'no'}">
+                        ${caps.mediaRecorder ? '✅' : '❌'} MediaRecorder API
+                    </div>
+                    <div class="capability ${caps.audioContext ? 'yes' : 'no'}">
+                        ${caps.audioContext ? '✅' : '❌'} AudioContext API
+                    </div>
+                </div>
+                ${supportedTypes.length > 0 ? `
+                    <div class="status info" style="margin-top: 10px;">
+                        <strong>Supported formats:</strong><br>
+                        ${supportedTypes.join('<br>')}
+                    </div>
+                ` : ''}
+            `;
+            
+            document.getElementById('capabilities').innerHTML = html;
+            return caps;
+        }
+        
+        // Test microphone permission
+        let audioStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let animationFrame = null;
+        
+        document.getElementById('testPermission').addEventListener('click', async () => {
+            const btn = document.getElementById('testPermission');
+            const status = document.getElementById('permissionStatus');
+            const levelContainer = document.getElementById('audioLevelContainer');
+            
+            try {
+                btn.disabled = true;
+                status.innerHTML = '<div class="status info">Requesting microphone access...</div>';
+                
+                audioStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                status.innerHTML = '<div class="status success">✅ Microphone access granted!</div>';
+                levelContainer.style.display = 'block';
+                
+                // Monitor audio level
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioContext();
+                analyser = audioContext.createAnalyser();
+                const microphone = audioContext.createMediaStreamSource(audioStream);
+                analyser.fftSize = 256;
+                microphone.connect(analyser);
+                
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                function updateLevel() {
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    const level = Math.round(average);
+                    const bar = document.getElementById('audioLevelBar');
+                    bar.style.width = Math.min(level * 2, 100) + '%';
+                    bar.textContent = level > 0 ? `Level: ${level}` : '0';
+                    animationFrame = requestAnimationFrame(updateLevel);
+                }
+                updateLevel();
+                
+            } catch (error) {
+                status.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        });
+        
+        // Recording test
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        
+        document.getElementById('startRecording').addEventListener('click', async () => {
+            const startBtn = document.getElementById('startRecording');
+            const stopBtn = document.getElementById('stopRecording');
+            const status = document.getElementById('recordingStatus');
+            
+            try {
+                if (!audioStream) {
+                    throw new Error('Please test microphone access first');
+                }
+                
+                const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
+                    .find(type => MediaRecorder.isTypeSupported(type)) || 'audio/webm';
+                
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(audioStream, { mimeType });
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: mimeType });
+                    status.innerHTML = `<div class="status success">✅ Recording saved! Size: ${blob.size} bytes</div>`;
+                };
+                
+                mediaRecorder.start();
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                startBtn.classList.add('recording');
+                status.innerHTML = '<div class="status info">🔴 Recording... Speak now!</div>';
+                
+            } catch (error) {
+                status.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        });
+        
+        document.getElementById('stopRecording').addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                document.getElementById('startRecording').disabled = false;
+                document.getElementById('stopRecording').disabled = true;
+                document.getElementById('startRecording').classList.remove('recording');
+            }
+        });
+        
+        // Speech recognition test
+        let recognition = null;
+        
+        document.getElementById('startSpeech').addEventListener('click', () => {
+            const startBtn = document.getElementById('startSpeech');
+            const stopBtn = document.getElementById('stopSpeech');
+            const status = document.getElementById('speechStatus');
+            const transcript = document.getElementById('transcript');
+            
+            try {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    throw new Error('Speech Recognition not supported');
+                }
+                
+                recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+                
+                recognition.onstart = () => {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    startBtn.classList.add('recording');
+                    status.innerHTML = '<div class="status info">🎤 Listening... Speak now!</div>';
+                    transcript.textContent = 'Listening...';
+                    transcript.classList.remove('empty');
+                };
+                
+                recognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    let interimTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcriptPiece = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcriptPiece + ' ';
+                        } else {
+                            interimTranscript += transcriptPiece;
+                        }
+                    }
+                    
+                    transcript.textContent = finalTranscript + interimTranscript;
+                };
+                
+                recognition.onerror = (event) => {
+                    status.innerHTML = `<div class="status error">❌ Error: ${event.error}</div>`;
+                };
+                
+                recognition.onend = () => {
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    startBtn.classList.remove('recording');
+                    status.innerHTML = '<div class="status success">✅ Speech recognition stopped</div>';
+                };
+                
+                recognition.start();
+                
+            } catch (error) {
+                status.innerHTML = `<div class="status error">❌ ${error.message}</div>`;
+            }
+        });
+        
+        document.getElementById('stopSpeech').addEventListener('click', () => {
+            if (recognition) {
+                recognition.stop();
+            }
+        });
+        
+        // Initialize
+        checkCapabilities();
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+        });
+    </script>
+</body>
+</html>

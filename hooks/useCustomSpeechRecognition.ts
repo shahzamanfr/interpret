@@ -11,199 +11,194 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
   const [status, setStatus] = useState('');
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const webSpeechRecognitionRef = useRef<any>(null);
-  const interimTranscriptRef = useRef<string>('');
-  const finalTranscriptRef = useRef<string>(''); // Accumulate final results
+  const startTimeRef = useRef<number>(0);
 
-  // Monitor audio level
   const monitorAudioLevel = useCallback((stream: MediaStream) => {
-    const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
-    const audioContext = new AudioContext();
-    const analyser = audioContext.createAnalyser();
-    const microphone = audioContext.createMediaStreamSource(stream);
-    
-    analyser.fftSize = 256;
-    microphone.connect(analyser);
-    
-    audioContextRef.current = audioContext;
-    analyserRef.current = analyser;
-    
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    const checkLevel = () => {
-      if (!analyserRef.current) return;
+    try {
+      const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) {
+        console.warn('AudioContext not supported');
+        return;
+      }
       
-      analyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      setAudioLevel(Math.round(average));
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
       
-      animationFrameRef.current = requestAnimationFrame(checkLevel);
-    };
-    
-    checkLevel();
+      analyser.fftSize = 256;
+      microphone.connect(analyser);
+      
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      const checkLevel = () => {
+        if (!analyserRef.current) return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setAudioLevel(Math.round(average));
+        
+        animationFrameRef.current = requestAnimationFrame(checkLevel);
+      };
+      
+      checkLevel();
+    } catch (err) {
+      console.error('Audio monitoring error:', err);
+    }
   }, []);
 
-  // Start recording
   const startRecording = useCallback(async () => {
     try {
-      console.log('🎤 Starting custom audio recording...');
-      setStatus('Requesting microphone access...');
+      console.log('🎤 Starting...');
+      setStatus('Requesting mic...');
       
-      // Reset transcript refs for new recording session
-      finalTranscriptRef.current = '';
-      interimTranscriptRef.current = '';
-      
-      // Request microphone with high quality settings
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Request microphone with optimal settings
+      const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: 16000, // Good for speech recognition
         }
       });
+      mediaStreamRef.current = stream;
       
-      console.log('✅ Microphone access granted');
-      setStatus('Recording... Speak now!');
+      console.log('✅ Mic granted');
+      setStatus('🎙️ Recording... (speak now)');
+      setIsRecording(true);
+      startTimeRef.current = Date.now();
       
-      // Start audio level monitoring
       monitorAudioLevel(stream);
       
-      // Start Web Speech API for real-time interim results
-      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-        const recognition = new SpeechRecognition();
-        
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        
-        recognition.onresult = (event: any) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
-          
-          // Loop through ALL results to accumulate final text
-          for (let i = 0; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              finalTranscript += transcript + ' ';
-            } else {
-              interimTranscript += transcript;
-            }
-          }
-          
-          // Update the accumulated final transcript
-          if (finalTranscript) {
-            finalTranscriptRef.current += finalTranscript;
-          }
-          
-          // Combine accumulated final + current interim
-          const fullTranscript = (finalTranscriptRef.current + interimTranscript).trim();
-          
-          if (fullTranscript) {
-            interimTranscriptRef.current = fullTranscript;
-            console.log('⚡ Full transcript:', fullTranscript);
-            onTranscript(fullTranscript);
-          }
-        };
-        
-        recognition.onerror = (event: any) => {
-          console.warn('⚠️ Web Speech error (non-critical):', event.error);
-        };
-        
-        try {
-          recognition.start();
-          webSpeechRecognitionRef.current = recognition;
-          console.log('✅ Real-time transcription started');
-        } catch (e) {
-          console.warn('⚠️ Web Speech unavailable, will use API only');
-        }
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      }
+      console.log('✅ MIME:', mimeType);
+      
+      if (!mimeType) {
+        throw new Error('No supported audio format');
       }
       
-      // Create MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-      
       audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-          console.log('📦 Audio chunk received:', event.data.size, 'bytes');
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          console.log('Chunk:', e.data.size, 'bytes');
+          audioChunksRef.current.push(e.data);
         }
       };
       
       mediaRecorder.onstop = async () => {
-        console.log('🛑 Recording stopped');
+        const duration = (Date.now() - startTimeRef.current) / 1000;
+        console.log('📤 Recording duration:', duration, 'seconds');
         
-        // Stop Web Speech API
-        if (webSpeechRecognitionRef.current) {
-          try {
-            webSpeechRecognitionRef.current.stop();
-            webSpeechRecognitionRef.current = null;
-          } catch (e) {
-            console.log('Web speech already stopped');
+        if (duration < 2) {
+          console.warn('⚠️ Too short:', duration, 's');
+          setStatus('⚠️ Record for 3+ seconds');
+          onError?.('Hold button and speak for at least 3 seconds');
+          setTimeout(() => setStatus(''), 3000);
+          return;
+        }
+        
+        setStatus('Transcribing...');
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        console.log('📤 Audio:', blob.size, 'bytes,', duration, 's, chunks:', audioChunksRef.current.length);
+        
+        if (blob.size < 1000) {
+          console.warn('⚠️ Empty audio');
+          setStatus('⚠️ No audio');
+          onError?.('Mic not working');
+          setTimeout(() => setStatus(''), 3000);
+          return;
+        }
+        
+        const formData = new FormData();
+        formData.append('audio', blob, 'recording.webm');
+        
+        try {
+          console.log('🚀 Sending...');
+          const res = await fetch('http://localhost:8787/api/speech/transcribe', {
+            method: 'POST',
+            body: formData,
+          });
+          
+          const data = await res.json();
+          console.log('📥', res.status, ':', data);
+          
+          if (!res.ok) {
+            console.error('❌', data.message);
+            setStatus('❌ Error');
+            onError?.(data.message || 'Backend error');
+            return;
           }
+          
+          if (data.text && data.text.trim()) {
+            console.log('✅', data.text);
+            onTranscript(data.text);
+            setStatus('✅ Done!');
+          } else {
+            console.warn('⚠️ Empty');
+            setStatus('⚠️ No speech');
+            onError?.('Speak clearly into mic');
+          }
+        } catch (err: any) {
+          console.error('❌ Error:', err);
+          onError?.('Transcription failed: ' + err.message);
+          setStatus('❌ Failed');
         }
         
-        // Use the accumulated transcript from Web Speech API
-        console.log('📝 Final transcript:', finalTranscriptRef.current);
-        setStatus('Done!');
-        
-        if (finalTranscriptRef.current.trim()) {
-          onTranscript(finalTranscriptRef.current.trim());
-        } else if (interimTranscriptRef.current.trim()) {
-          onTranscript(interimTranscriptRef.current.trim());
-        }
-        
-        setTimeout(() => setStatus(''), 1000);
-        
-        // Cleanup
-        stream.getTracks().forEach(track => track.stop());
-        finalTranscriptRef.current = '';
-        interimTranscriptRef.current = '';
+        setTimeout(() => setStatus(''), 2000);
       };
       
-      mediaRecorder.start();
+      mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
-      setIsRecording(true);
-      console.log('🎙️ Recording started successfully');
       
-    } catch (error: any) {
-      console.error('❌ Failed to start recording:', error);
+    } catch (err: any) {
+      console.error('❌ Mic error:', err);
       setStatus('');
       setIsRecording(false);
-      onError?.(error.message || 'Failed to access microphone');
+      
+      let errorMsg = 'Microphone access denied';
+      if (err.name === 'NotAllowedError') {
+        errorMsg = 'Please allow microphone access';
+      } else if (err.name === 'NotFoundError') {
+        errorMsg = 'No microphone found';
+      } else if (err.name === 'NotReadableError') {
+        errorMsg = 'Microphone is in use';
+      }
+      
+      onError?.(errorMsg);
     }
   }, [monitorAudioLevel, onTranscript, onError]);
 
-  // Stop recording
   const stopRecording = useCallback(() => {
-    console.log('🛑 Stopping recording...');
-    
-    if (webSpeechRecognitionRef.current) {
-      try {
-        webSpeechRecognitionRef.current.stop();
-      } catch (e) {
-        console.log('Web speech already stopped');
-      }
-    }
+    console.log('🛑 Stopping...');
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
     
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+    
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
     }
     
     if (audioContextRef.current) {
       audioContextRef.current.close();
+      audioContextRef.current = null;
     }
     
     setIsRecording(false);

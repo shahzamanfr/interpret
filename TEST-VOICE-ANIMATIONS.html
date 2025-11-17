@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Recorder Animations Test</title>
+    <style>
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: #000;
+            color: #fff;
+            padding: 2rem;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        .demo-section {
+            background: rgba(31, 41, 55, 0.3);
+            border: 1px solid rgba(75, 85, 99, 1);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .listening-dots {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            margin: 1rem 0;
+        }
+        
+        .dot {
+            width: 4px;
+            height: 4px;
+            background: #60a5fa;
+            border-radius: 50%;
+            animation: listeningPulse 1.5s ease-in-out infinite;
+        }
+        
+        .dot:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+        
+        .dot:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+        
+        @keyframes listeningPulse {
+            0%, 100% { 
+                transform: scaleY(1); 
+                opacity: 0.7; 
+            }
+            50% { 
+                transform: scaleY(1.5); 
+                opacity: 1; 
+            }
+        }
+        
+        .ai-indicator {
+            background: rgba(17, 24, 39, 0.95);
+            border: 1px solid rgba(75, 85, 99, 1);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin: 1rem auto;
+            max-width: 300px;
+            backdrop-filter: blur(8px);
+        }
+        
+        .ai-avatar {
+            width: 32px;
+            height: 32px;
+            background: #2563eb;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+        }
+        
+        .audio-bars {
+            display: flex;
+            gap: 2px;
+            align-items: end;
+            height: 20px;
+        }
+        
+        .bar {
+            width: 2px;
+            background: #60a5fa;
+            border-radius: 1px;
+            animation: audioWave 0.8s ease-in-out infinite;
+        }
+        
+        .bar:nth-child(1) { animation-delay: 0s; }
+        .bar:nth-child(2) { animation-delay: 0.1s; }
+        .bar:nth-child(3) { animation-delay: 0.2s; }
+        .bar:nth-child(4) { animation-delay: 0.3s; }
+        .bar:nth-child(5) { animation-delay: 0.4s; }
+        .bar:nth-child(6) { animation-delay: 0.5s; }
+        .bar:nth-child(7) { animation-delay: 0.6s; }
+        .bar:nth-child(8) { animation-delay: 0.7s; }
+        
+        @keyframes audioWave {
+            0%, 100% { 
+                height: 2px; 
+                opacity: 0.3; 
+            }
+            50% { 
+                height: 12px; 
+                opacity: 1; 
+            }
+        }
+        
+        .mic-button {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border: none;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            margin: 1rem;
+        }
+        
+        .mic-button:hover {
+            transform: scale(1.05);
+        }
+        
+        .mic-button.recording {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+        
+        .ripple {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.4);
+            animation: ripple 2s ease-out infinite;
+        }
+        
+        @keyframes ripple {
+            0% { 
+                transform: scale(1); 
+                opacity: 0.8; 
+            }
+            100% { 
+                transform: scale(2); 
+                opacity: 0; 
+            }
+        }
+        
+        .status-text {
+            color: #9ca3af;
+            font-size: 14px;
+            margin-top: 0.5rem;
+        }
+        
+        .feature-list {
+            text-align: left;
+            max-width: 600px;
+            margin: 2rem auto;
+        }
+        
+        .feature-list li {
+            margin: 0.5rem 0;
+            padding-left: 1rem;
+            position: relative;
+        }
+        
+        .feature-list li::before {
+            content: "✨";
+            position: absolute;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Enhanced Voice Recorder with AI Listening Animations</h1>
+        <p>Professional listening animations and visual feedback for your AI Communication Coach</p>
+        
+        <div class="demo-section">
+            <h2>🤖 AI Listening Indicator</h2>
+            <div class="ai-indicator">
+                <div style="display: flex; align-items: center;">
+                    <div class="ai-avatar">✓</div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>AI is listening...</span>
+                            <div class="listening-dots">
+                                <div class="dot"></div>
+                                <div class="dot"></div>
+                                <div class="dot"></div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                            <div class="audio-bars">
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                            </div>
+                            <span style="font-size: 12px; opacity: 0.7;">🔊</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>🎙️ Microphone Button with Ripple Effect</h2>
+            <button class="mic-button" id="micButton" onclick="toggleRecording()">
+                <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                </svg>
+            </button>
+            <div class="status-text" id="statusText">Click to start recording</div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>✨ New Features Added</h2>
+            <ul class="feature-list">
+                <li><strong>Professional Listening Dots:</strong> Animated dots that pulse while AI is listening</li>
+                <li><strong>AI Listening Indicator:</strong> Beautiful floating indicator showing AI status</li>
+                <li><strong>Audio Level Visualization:</strong> Real-time audio bars showing microphone input</li>
+                <li><strong>Ripple Effects:</strong> Smooth ripple animations during recording</li>
+                <li><strong>Enhanced Visual Feedback:</strong> Clear status messages and icons</li>
+                <li><strong>Theme Support:</strong> Works perfectly with dark/light themes</li>
+                <li><strong>Smooth Transitions:</strong> All animations are GPU-accelerated and smooth</li>
+                <li><strong>Professional Polish:</strong> Enterprise-grade visual design</li>
+            </ul>
+        </div>
+        
+        <div class="demo-section">
+            <h2>🚀 How It Works</h2>
+            <p>When you click the microphone button in your AI Communication Coach:</p>
+            <ol style="text-align: left; max-width: 500px; margin: 1rem auto;">
+                <li>Beautiful AI listening indicator appears above the button</li>
+                <li>Animated dots show the AI is actively listening</li>
+                <li>Real-time audio level bars visualize your voice input</li>
+                <li>Ripple effects provide satisfying visual feedback</li>
+                <li>Smooth transitions between listening and processing states</li>
+                <li>Professional transcription with enhanced UX</li>
+            </ol>
+        </div>
+        
+        <div class="demo-section">
+            <h2>🎯 Ready to Use</h2>
+            <p>The enhanced voice recorder is now integrated into:</p>
+            <ul style="text-align: left; max-width: 400px; margin: 1rem auto;">
+                <li>✅ Input Panel (main description area)</li>
+                <li>✅ Debater Interface</li>
+                <li>✅ Group Discussion Interface</li>
+                <li>✅ All coaching modes</li>
+            </ul>
+            <p style="margin-top: 1rem; color: #10b981;">
+                <strong>Start your app and try the microphone button to see the beautiful animations in action!</strong>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        let isRecording = false;
+        
+        function toggleRecording() {
+            const button = document.getElementById('micButton');
+            const statusText = document.getElementById('statusText');
+            
+            isRecording = !isRecording;
+            
+            if (isRecording) {
+                button.classList.add('recording');
+                button.innerHTML = `
+                    <div class="ripple"></div>
+                    <div class="ripple" style="animation-delay: 0.5s;"></div>
+                    <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="7" y="7" width="10" height="10" rx="2"/>
+                    </svg>
+                `;
+                statusText.textContent = 'Recording... Click to stop';
+            } else {
+                button.classList.remove('recording');
+                button.innerHTML = `
+                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                    </svg>
+                `;
+                statusText.textContent = 'Click to start recording';
+            }
+        }
+    </script>
+</body>
+</html>

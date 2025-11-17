@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { LoadingState } from "../types";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
 import ChallengeBanner from "./ChallengeBanner";
@@ -30,6 +30,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   onDismissStrategy,
 }) => {
   const { theme } = useTheme();
+  const [isListening, setIsListening] = useState(false);
 
   const handleTranscript = (text: string) => {
     console.log("🎤 Transcription received:", text);
@@ -110,8 +111,31 @@ const InputPanel: React.FC<InputPanelProps> = ({
               : "bg-white border-gray-200 focus:border-gray-200 focus:ring-blue-500/30 text-black placeholder-gray-500"
           }`}
         />
+        {/* Listening Animation Overlay */}
+        {isListening && (
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className="flex items-center space-x-2">
+              <div className="flex space-x-1">
+                <div className={`w-1 h-1 rounded-full animate-bounce ${
+                  theme === "dark" ? "bg-gray-400" : "bg-gray-600"
+                }`} style={{ animationDelay: '0s' }} />
+                <div className={`w-1 h-1 rounded-full animate-bounce ${
+                  theme === "dark" ? "bg-gray-400" : "bg-gray-600"
+                }`} style={{ animationDelay: '0.1s' }} />
+                <div className={`w-1 h-1 rounded-full animate-bounce ${
+                  theme === "dark" ? "bg-gray-400" : "bg-gray-600"
+                }`} style={{ animationDelay: '0.2s' }} />
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="absolute top-3 right-3 flex space-x-2 z-10">
-          <CustomVoiceRecorder onTranscript={handleTranscript} disabled={isLoading} />
+          <CustomVoiceRecorder 
+            onTranscript={handleTranscript} 
+            disabled={isLoading}
+            onRecordingChange={setIsListening}
+          />
         </div>
       </div>
       <button

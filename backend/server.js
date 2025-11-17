@@ -2,12 +2,19 @@
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import multer from "multer";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegStatic from "ffmpeg-static";
+import { Readable } from "stream";
+import { writeFileSync, unlinkSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+
+ffmpeg.setFfmpegPath(ffmpegStatic);
 
 dotenv.config();
 
@@ -26,7 +33,11 @@ if (!GEMINI_KEY) {
   console.warn("[backend] No GEMINI_API_KEY set. AI routes will return 503.");
 }
 
-if (SPEECH_PROVIDER !== "browser" && !SPEECH_API_KEY) {
+if (SPEECH_PROVIDER === "gemini" && !GEMINI_KEY) {
+  console.warn(
+    `[backend] No GEMINI_API_KEY set. Speech routes will not work.`,
+  );
+} else if (SPEECH_PROVIDER !== "browser" && SPEECH_PROVIDER !== "gemini" && !SPEECH_API_KEY) {
   console.warn(
     `[backend] No SPEECH_API_KEY set for ${SPEECH_PROVIDER}. Speech routes will use fallback.`,
   );
@@ -62,9 +73,11 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("audio/")) {
+    // Accept audio files or application/octet-stream (for blob uploads)
+    if (file.mimetype.startsWith("audio/") || file.mimetype === "application/octet-stream") {
       cb(null, true);
     } else {
+      console.log('❌ Rejected mimetype:', file.mimetype);
       cb(new Error("Only audio files allowed"), false);
     }
   },
@@ -91,11 +104,11 @@ app.post("/api/ai/generate-content", async (req, res) => {
       });
     }
     
-    const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
-    const response = await ai.models.generateContent({
-      model,
+    const ai = new GoogleGenerativeAI(GEMINI_KEY);
+    const model_instance = ai.getGenerativeModel({ model });
+    const response = await model_instance.generateContent({
       contents,
-      config,
+      ...config,
     });
     
     res.json({ 
@@ -217,6 +230,8 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
       });
     }
 
+    console.log('📥 Audio received:', req.file.size, 'bytes,', req.file.mimetype);
+
     // Validate file size and type
     if (req.file.size > 10 * 1024 * 1024) {
       return res.status(413).json({
@@ -224,9 +239,22 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
         message: "Audio file must be less than 10MB",
       });
     }
+    
+    if (req.file.size < 100) {
+      return res.status(400).json({
+        error: "File too small",
+        message: "Audio file appears to be empty or corrupted",
+      });
+    }
 
-    // Check if API key is configured
-    if (!SPEECH_API_KEY) {
+    // Check if API key is configured (Gemini uses GEMINI_KEY, others use SPEECH_API_KEY)
+    if (SPEECH_PROVIDER === "gemini" && !GEMINI_KEY) {
+      return res.status(503).json({
+        error: "Service unavailable",
+        message: "Gemini API key not configured",
+        provider: SPEECH_PROVIDER,
+      });
+    } else if (SPEECH_PROVIDER !== "gemini" && !SPEECH_API_KEY) {
       return res.status(503).json({
         error: "Service unavailable",
         message: "Speech recognition service not configured",
@@ -237,7 +265,9 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
     // Transcribe based on provider
     let transcript;
     try {
-      if (SPEECH_PROVIDER === "assemblyai") {
+      if (SPEECH_PROVIDER === "gemini") {
+        transcript = await transcribeWithGemini(req.file.buffer, req.file.mimetype);
+      } else if (SPEECH_PROVIDER === "assemblyai") {
         transcript = await transcribeWithAssemblyAI(req.file.buffer);
       } else if (SPEECH_PROVIDER === "deepgram") {
         transcript = await transcribeWithDeepgram(req.file.buffer);
@@ -250,6 +280,7 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
         });
       }
     } catch (transcriptionError) {
+      console.error('❌ Transcription error:', transcriptionError);
       return res.status(502).json({
         error: "Transcription service error",
         message: transcriptionError.message || "Failed to transcribe audio",
@@ -271,30 +302,130 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
   }
 });
 
+// Gemini transcription function (uses existing Gemini API key)
+async function transcribeWithGemini(audioBuffer, mimeType = 'audio/webm') {
+  try {
+    console.log('🚀 Gemini transcription:', audioBuffer.length, 'bytes');
+    
+    if (!GEMINI_KEY) {
+      throw new Error('Gemini API key not configured');
+    }
+    
+    // Detect MIME type from buffer if not provided
+    let detectedMimeType = mimeType;
+    if (!mimeType || mimeType === 'application/octet-stream') {
+      // Default to webm for most browsers
+      detectedMimeType = 'audio/webm';
+    }
+    
+
+    
+    // Convert buffer to base64
+    const base64Audio = audioBuffer.toString('base64');
+    
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: 'Transcribe this audio to text. Only return the transcription, nothing else.' },
+              {
+                inline_data: {
+                  mime_type: detectedMimeType,
+                  data: base64Audio
+                }
+              }
+            ]
+          }]
+        })
+      }
+    );
+    
+
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('❌ Gemini error:', errorText);
+      throw new Error(`Gemini error: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    console.log('✅ Transcript:', text.substring(0, 100));
+    
+    return {
+      text: text.trim(),
+      confidence: 0.9
+    };
+  } catch (error) {
+    throw new Error(`Gemini transcription error: ${error.message}`);
+  }
+}
+
+// Convert audio to WAV format
+async function convertToWav(audioBuffer) {
+  return new Promise((resolve, reject) => {
+    const inputPath = join(tmpdir(), `input-${Date.now()}.webm`);
+    const outputPath = join(tmpdir(), `output-${Date.now()}.wav`);
+    
+    try {
+      writeFileSync(inputPath, audioBuffer);
+      
+      ffmpeg(inputPath)
+        .toFormat('wav')
+        .audioCodec('pcm_s16le')
+        .audioChannels(1)
+        .audioFrequency(16000)
+        .on('end', () => {
+          try {
+            const wavBuffer = readFileSync(outputPath);
+            unlinkSync(inputPath);
+            unlinkSync(outputPath);
+            resolve(wavBuffer);
+          } catch (err) {
+            reject(err);
+          }
+        })
+        .on('error', (err) => {
+          try { unlinkSync(inputPath); } catch {}
+          try { unlinkSync(outputPath); } catch {}
+          reject(err);
+        })
+        .save(outputPath);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 // AssemblyAI transcription function
 async function transcribeWithAssemblyAI(audioBuffer) {
   try {
+    console.log('📤 AssemblyAI upload:', audioBuffer.length, 'bytes');
+    
     // Step 1: Upload audio
     const uploadResponse = await fetch("https://api.assemblyai.com/v2/upload", {
       method: "POST",
       headers: {
         authorization: SPEECH_API_KEY,
-        "content-type": "application/octet-stream",
       },
       body: audioBuffer,
     });
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
-      throw new Error(`Upload failed: ${uploadResponse.statusText} - ${errorText}`);
+      console.log('❌ Upload failed:', errorText);
+      throw new Error(`Upload failed: ${uploadResponse.statusText}`);
     }
 
     const uploadResult = await uploadResponse.json();
-    if (!uploadResult.upload_url) {
-      throw new Error("No upload URL received from AssemblyAI");
-    }
+    console.log('✅ Uploaded:', uploadResult.upload_url);
 
-    // Step 2: Request transcription
+    // Step 2: Request transcription with enhanced settings
     const transcriptResponse = await fetch(
       "https://api.assemblyai.com/v2/transcript",
       {
@@ -306,86 +437,90 @@ async function transcribeWithAssemblyAI(audioBuffer) {
         body: JSON.stringify({
           audio_url: uploadResult.upload_url,
           language_code: "en",
+          punctuate: true,
+          format_text: true,
+          speech_model: "best",
         }),
       },
     );
 
     if (!transcriptResponse.ok) {
       const errorText = await transcriptResponse.text();
-      throw new Error(
-        `Transcription request failed: ${transcriptResponse.statusText} - ${errorText}`,
-      );
+      throw new Error(`Transcription request failed: ${errorText}`);
     }
 
     const transcriptResult = await transcriptResponse.json();
-    if (!transcriptResult.id) {
-      throw new Error("No transcript ID received from AssemblyAI");
-    }
+    console.log('⏳ Polling transcript:', transcriptResult.id);
+    console.log('📊 Request details:', JSON.stringify(transcriptResult, null, 2));
 
-    // Step 3: Poll for result with timeout
-    const maxAttempts = 60; // 1 minute timeout
+    // Step 3: Poll for result
+    const maxAttempts = 60;
     let attempts = 0;
     
     while (attempts < maxAttempts) {
       const pollingResponse = await fetch(
         `https://api.assemblyai.com/v2/transcript/${transcriptResult.id}`,
-        {
-          headers: { authorization: SPEECH_API_KEY },
-        },
+        { headers: { authorization: SPEECH_API_KEY } },
       );
 
-      if (!pollingResponse.ok) {
-        throw new Error(`Polling failed: ${pollingResponse.statusText}`);
-      }
-
       const transcript = await pollingResponse.json();
+      console.log(`📊 Status: ${transcript.status}`);
 
       if (transcript.status === "completed") {
+        console.log('✅ Transcript:', transcript.text || '(empty)');
         return {
           text: transcript.text || "",
           confidence: transcript.confidence || 0,
         };
       } else if (transcript.status === "error") {
-        throw new Error(`Transcription failed: ${transcript.error || "Unknown error"}`);
+        console.log('❌ Error:', transcript.error);
+        throw new Error(transcript.error || "Transcription failed");
       }
 
       attempts++;
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     
-    throw new Error("Transcription timeout - processing took too long");
+    throw new Error("Transcription timeout");
   } catch (error) {
-    throw new Error(`AssemblyAI transcription error: ${error.message}`);
+    throw new Error(`AssemblyAI error: ${error.message}`);
   }
 }
 
 // Deepgram transcription function
 async function transcribeWithDeepgram(audioBuffer) {
   try {
+    console.log('🚀 Deepgram:', audioBuffer.length, 'bytes');
+    
     const response = await fetch(
-      "https://api.deepgram.com/v1/listen?model=nova-2&punctuate=true",
+      "https://api.deepgram.com/v1/listen?model=nova-2&punctuate=true&language=en",
       {
         method: "POST",
         headers: {
           Authorization: `Token ${SPEECH_API_KEY}`,
-          "Content-Type": "audio/wav",
+          "Content-Type": "audio/webm",
         },
         body: audioBuffer,
       },
     );
+    
+
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.log('❌ Deepgram error:', errorText);
       throw new Error(`Deepgram error: ${response.statusText} - ${errorText}`);
     }
 
     const result = await response.json();
+
     
     if (!result.results?.channels?.[0]?.alternatives?.[0]) {
       throw new Error("Invalid response format from Deepgram");
     }
     
     const transcript = result.results.channels[0].alternatives[0];
+    console.log('✅ Transcript:', transcript.transcript.substring(0, 50));
 
     return {
       text: transcript.transcript || "",
@@ -433,8 +568,13 @@ async function transcribeWithWhisper(audioBuffer) {
 app.listen(PORT, () => {
   console.log(`[backend] listening on :${PORT}`);
   console.log(`[backend] Speech provider: ${SPEECH_PROVIDER}`);
-  console.log(`[backend] Speech API configured: ${!!SPEECH_API_KEY}`);
-  if (!SPEECH_API_KEY) {
+  
+  const isConfigured = SPEECH_PROVIDER === "gemini" ? !!GEMINI_KEY : !!SPEECH_API_KEY;
+  console.log(`[backend] Speech API configured: ${isConfigured}`);
+  
+  if (SPEECH_PROVIDER === "gemini" && GEMINI_KEY) {
+    console.log(`[backend] ✅ Using Gemini for speech-to-text`);
+  } else if (!isConfigured) {
     console.log(
       `[backend] 💡 Get free API key: https://www.assemblyai.com/ ($50 credit)`,
     );

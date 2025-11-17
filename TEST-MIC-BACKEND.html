@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Microphone → Backend</title>
+    <style>
+        body { font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto; }
+        button { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; }
+        #record { background: #4CAF50; color: white; border: none; border-radius: 5px; }
+        #stop { background: #f44336; color: white; border: none; border-radius: 5px; }
+        #status { margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 5px; }
+        #result { margin: 20px 0; padding: 15px; background: #e3f2fd; border-radius: 5px; white-space: pre-wrap; }
+        .log { font-family: monospace; font-size: 12px; color: #666; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Test Microphone → Backend</h1>
+    <p>This tests the full flow: Browser → Record → Backend → AssemblyAI</p>
+    
+    <button id="record">🎙️ Start Recording</button>
+    <button id="stop" disabled>⏹️ Stop Recording</button>
+    
+    <div id="status">Status: Ready</div>
+    <div id="logs"></div>
+    <div id="result"></div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        
+        const recordBtn = document.getElementById('record');
+        const stopBtn = document.getElementById('stop');
+        const statusDiv = document.getElementById('status');
+        const logsDiv = document.getElementById('logs');
+        const resultDiv = document.getElementById('result');
+        
+        function log(msg) {
+            console.log(msg);
+            const div = document.createElement('div');
+            div.className = 'log';
+            div.textContent = new Date().toLocaleTimeString() + ' - ' + msg;
+            logsDiv.appendChild(div);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+        
+        recordBtn.onclick = async () => {
+            try {
+                log('Requesting microphone permission...');
+                statusDiv.textContent = 'Status: Requesting microphone...';
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                log('✅ Microphone access granted');
+                
+                // Detect best format
+                const formats = [
+                    'audio/wav',
+                    'audio/mp4',
+                    'audio/webm;codecs=opus',
+                    'audio/webm'
+                ];
+                
+                let mimeType = 'audio/webm';
+                for (const format of formats) {
+                    if (MediaRecorder.isTypeSupported(format)) {
+                        mimeType = format;
+                        log('✅ Using format: ' + format);
+                        break;
+                    }
+                }
+                
+                audioChunks = [];
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunks.push(e.data);
+                        log('📦 Received chunk: ' + e.data.size + ' bytes');
+                    }
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    log('🛑 Recording stopped');
+                    statusDiv.textContent = 'Status: Processing...';
+                    
+                    const blob = new Blob(audioChunks, { type: mimeType });
+                    log('📦 Total audio size: ' + blob.size + ' bytes');
+                    
+                    const formData = new FormData();
+                    formData.append('audio', blob, 'recording.' + mimeType.split('/')[1].split(';')[0]);
+                    
+                    try {
+                        log('📤 Sending to backend...');
+                        const res = await fetch('http://localhost:8787/api/speech/transcribe', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        log('📥 Response status: ' + res.status);
+                        const data = await res.json();
+                        log('📥 Response: ' + JSON.stringify(data));
+                        
+                        if (data.success) {
+                            statusDiv.textContent = 'Status: ✅ Success!';
+                            resultDiv.textContent = 'Transcript: ' + data.text;
+                            resultDiv.style.background = '#c8e6c9';
+                        } else {
+                            statusDiv.textContent = 'Status: ❌ Failed';
+                            resultDiv.textContent = 'Error: ' + (data.message || data.error);
+                            resultDiv.style.background = '#ffcdd2';
+                        }
+                    } catch (err) {
+                        log('❌ Error: ' + err.message);
+                        statusDiv.textContent = 'Status: ❌ Error';
+                        resultDiv.textContent = 'Error: ' + err.message;
+                        resultDiv.style.background = '#ffcdd2';
+                    }
+                    
+                    stream.getTracks().forEach(t => t.stop());
+                    recordBtn.disabled = false;
+                    stopBtn.disabled = true;
+                };
+                
+                mediaRecorder.start();
+                log('🎙️ Recording started');
+                statusDiv.textContent = 'Status: 🎙️ Recording... (speak now!)';
+                recordBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+            } catch (err) {
+                log('❌ Error: ' + err.message);
+                statusDiv.textContent = 'Status: ❌ Error - ' + err.message;
+                resultDiv.textContent = 'Error: ' + err.message;
+                resultDiv.style.background = '#ffcdd2';
+            }
+        };
+        
+        stopBtn.onclick = () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+        };
+        
+        // Check backend on load
+        fetch('http://localhost:8787/api/health')
+            .then(res => res.json())
+            .then(() => log('✅ Backend is running'))
+            .catch(() => {
+                log('❌ Backend is NOT running!');
+                statusDiv.textContent = 'Status: ❌ Backend not running - Start it first!';
+                statusDiv.style.background = '#ffcdd2';
+            });
+    </script>
+</body>
+</html>
