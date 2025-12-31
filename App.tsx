@@ -26,11 +26,9 @@ import ProgressPanel from "./components/ProgressPanel";
 import BehavioralAnalysisPanel from "./components/BehavioralAnalysisPanel";
 import RewritePanel from "./components/RewritePanel";
 import {
-  getCoachingFeedback,
-  generateImageCaption,
-  imageToGenerativePart,
   getExplanationStrategy,
 } from "./services/geminiService";
+import { getCoachingFeedbackWithGroq, describeImageWithGrok } from "./services/grokService";
 import { imageDomains } from "./data/imageDomains";
 import { getRandomImageWithRetry } from "./services/imageService";
 import HomeDomains from "./components/HomeDomains";
@@ -112,6 +110,14 @@ const AppContent: React.FC = () => {
   const [showHeadingAnimation, setShowHeadingAnimation] = useState(false);
   const [isReturningHome, setIsReturningHome] = useState<boolean>(false);
 
+  // Coming Soon Modal State
+  const [comingSoonFeature, setComingSoonFeature] = useState<{
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    color: string;
+  } | null>(null);
+
   // Trigger heading animation after mount
   useEffect(() => {
     setTimeout(() => setShowHeadingAnimation(true), 100);
@@ -175,6 +181,7 @@ const AppContent: React.FC = () => {
       !showStorytellerInterface &&
       !showDebaterInterface &&
       !showGroupDiscussionInterface &&
+      !showGroupDiscussionInterface &&
       !showDescribeSection
     ) {
       // Wait a bit for animations to complete, then reset flag
@@ -192,44 +199,62 @@ const AppContent: React.FC = () => {
     showStorytellerInterface,
     showDebaterInterface,
     showGroupDiscussionInterface,
+    showGroupDiscussionInterface,
     showDescribeSection,
   ]);
 
-  const ai = useMemo(() => {
+  // Groq API keys (supports multiple keys for automatic fallback)
+  const groqApiKeys = useMemo(() => {
     try {
-      // Try multiple ways to get the API key
       const viteEnv = import.meta.env || {};
-      const apiKey =
-        (viteEnv as any).VITE_GEMINI_API_KEY ||
-        (viteEnv as any).VITE_API_KEY ||
-        (process as any)?.env?.GEMINI_API_KEY ||
-        (process as any)?.env?.API_KEY ||
-        (typeof localStorage !== "undefined"
-          ? localStorage.getItem("GEMINI_API_KEY")
-          : null);
+      const keys: string[] = [];
+
+      // Try to load up to 4 API keys
+      for (let i = 1; i <= 4; i++) {
+        const keyName = i === 1 ? 'VITE_GROQ_API_KEY' : `VITE_GROQ_API_KEY_${i}`;
+        const apiKey = (viteEnv as any)[keyName] ||
+          (process as any)?.env?.[keyName.replace('VITE_', '')] ||
+          (typeof localStorage !== "undefined" ? localStorage.getItem(keyName.replace('VITE_', '')) : null);
+
+        if (apiKey && apiKey !== "your_groq_api_key_here" && apiKey !== `your_key_${i}`) {
+          keys.push(apiKey);
+        }
+      }
 
       if ((import.meta as any)?.env?.DEV) {
-        console.log("🔑 API Key Debug Info:", {
-          importMetaEnvType: typeof import.meta.env,
-          hasViteGeminiKey: !!(viteEnv as any).VITE_GEMINI_API_KEY,
-          hasViteApiKey: !!(viteEnv as any).VITE_API_KEY,
-          hasKey: !!apiKey,
+        console.log("🔑 Groq API Keys Debug Info:", {
+          keysFound: keys.length,
+          keySlots: keys.map((_, idx) => `Key ${idx + 1}`),
         });
       }
 
-      const finalKey = apiKey;
-
-      if (!finalKey || finalKey === "your_gemini_api_key_here") {
-        console.error("❌ GEMINI_API_KEY not found");
+      if (keys.length === 0) {
+        console.error("❌ No GROQ_API_KEY found");
         return null;
       }
 
       if (import.meta.env.DEV) {
-        console.log("✅ Gemini AI initialized successfully");
+        console.log(`✅ ${keys.length} Groq API key(s) loaded successfully`);
       }
-      return new GoogleGenAI({ apiKey: finalKey });
+      return keys;
     } catch (error) {
-      console.error("❌ Failed to initialize Gemini AI:", error);
+      console.error("❌ Failed to load Groq API keys:", error);
+      return null;
+    }
+  }, []);
+
+  // Keep ai for legacy compatibility (strategy feature)
+  const ai = useMemo(() => {
+    try {
+      const viteEnv = import.meta.env || {};
+      const apiKey =
+        (viteEnv as any).VITE_GEMINI_API_KEY ||
+        (typeof localStorage !== "undefined"
+          ? localStorage.getItem("GEMINI_API_KEY")
+          : null);
+      if (!apiKey) return null;
+      return new GoogleGenAI({ apiKey });
+    } catch {
       return null;
     }
   }, []);
@@ -380,22 +405,9 @@ const AppContent: React.FC = () => {
   }, [scoreHistory]);
 
   const handleGetStrategy = async () => {
-    if (!ai || !imgRef.current) {
-      setError("Cannot get strategy until the image is loaded.");
-      return;
-    }
-    setIsFetchingStrategy(true);
-    setError(null);
-    try {
-      const imagePart = await imageToGenerativePart(imgRef.current);
-      const strategy = await getExplanationStrategy(ai, imagePart);
-      setExplanationStrategy(strategy);
-    } catch (err) {
-      console.error(err);
-      setError("Could not fetch a strategy. Please try again.");
-    } finally {
-      setIsFetchingStrategy(false);
-    }
+    // Strategy feature disabled - requires Gemini
+    setError("Strategy feature is temporarily unavailable.");
+    return;
   };
 
   // Clear URL hash on initial load to always start on home page
@@ -418,58 +430,14 @@ const AppContent: React.FC = () => {
 
     if (!userExplanation.trim()) {
       setError("Please provide an explanation before submitting.");
+      submittingRef.current = false;
       return;
     }
-    if (!ai) {
-      if (import.meta.env.DEV) {
-        console.log("❌ AI not initialized - API key missing");
-      }
-      // For testing purposes, show mock feedback
-      const mockFeedback = {
-        role: coachMode,
-        overall_score: 85,
-        category_scores: {
-          clarity: 18,
-          vocabulary: 17,
-          grammar: 20,
-          logic: 15,
-          fluency: 16,
-          creativity: 15,
-        },
-        feedback: `As a ${coachMode}, I can see you've provided a thoughtful explanation. Your communication shows good structure and clarity.`,
-        tips: [
-          "Add more descriptive adjectives to enhance vocabulary richness.",
-          "Slow down your delivery to improve clarity.",
-          "Use transitions between ideas for better flow.",
-          "Consider adding emotional context to make it more engaging.",
-        ],
-        // Legacy fields
-        score: 85,
-        whatYouDidWell: "Good structure and clear communication.",
-        areasForImprovement:
-          "Could use richer vocabulary and smoother transitions.",
-        personalizedTip:
-          "Focus on adding descriptive language to enhance your explanation.",
-        spokenResponse: "Your explanation shows good structure and clarity.",
-        communicationBehavior: {
-          profile: "Clear Communicator",
-          strength: "Good organization of ideas",
-          growthArea: "Vocabulary richness",
-        },
-        exampleRewrite: {
-          original: "The image shows a person.",
-          improved:
-            "The image depicts a confident individual standing in a professional setting.",
-          reasoning:
-            "The improved version adds descriptive language and context.",
-        },
-      };
 
-      setFeedback(mockFeedback);
-      setLoadingState(LoadingState.Done);
-      if (import.meta.env.DEV) {
-        console.log("🎭 Using mock feedback for testing");
-      }
+    // Check if we have Groq API key for feedback
+    if (!groqApiKeys) {
+      setError("Groq API key not configured. Please check your .env file.");
+      submittingRef.current = false;
       return;
     }
 
@@ -513,15 +481,51 @@ const AppContent: React.FC = () => {
       await waitForImageLoad(imgRef.current);
 
       const makeCaption = async () => {
-        const imagePart = await imageToGenerativePart(
-          imgRef.current as HTMLImageElement,
-        );
-        return await generateImageCaption(ai, imagePart);
+        console.log("🖼️ Using Hugging Face BLIP for image description...");
+
+        if (!groqApiKeys) {
+          throw new Error("Groq API key not configured");
+        }
+
+        // Convert image to base64
+        const canvas = document.createElement("canvas");
+        const img = imgRef.current as HTMLImageElement;
+
+        const maxDimension = 1024;
+        let width = img.naturalWidth;
+        let height = img.naturalHeight;
+
+        if (width > maxDimension || height > maxDimension) {
+          const ratio = Math.min(maxDimension / width, maxDimension / height);
+          width = Math.floor(width * ratio);
+          height = Math.floor(height * ratio);
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Could not get canvas context");
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        const base64data = dataUrl.split(",")[1];
+
+        console.log("📸 Generated base64 image data:", {
+          length: base64data.length,
+          dimensions: `${width}x${height}`,
+          sample: base64data.substring(0, 50),
+          imageUrl: img.src.substring(0, 100)
+        });
+
+        // Use Hugging Face BLIP for image description
+        return await describeImageWithGrok(groqApiKeys, base64data);
       };
 
       let aiCaption: string;
       try {
         aiCaption = await makeCaption();
+        console.log("✅ Grok Vision description:", aiCaption);
       } catch (e: any) {
         const msg = String(e?.message || e);
         const isTransient =
@@ -538,10 +542,14 @@ const AppContent: React.FC = () => {
       }
 
       setLoadingState(LoadingState.GeneratingFeedback);
+      console.log("🤖 Now using Groq for coaching feedback...");
 
       const makeFeedback = async () => {
-        return await getCoachingFeedback(
-          ai,
+        if (!groqApiKeys) {
+          throw new Error("Groq API key not configured");
+        }
+        return await getCoachingFeedbackWithGroq(
+          groqApiKeys,
           aiCaption,
           userExplanation,
           coachMode,
@@ -616,8 +624,8 @@ const AppContent: React.FC = () => {
     loadingState === LoadingState.GeneratingFeedback;
   const gallerySelectedSlug = activeDomain?.slug ?? initialDomain?.slug ?? "";
 
-  // Show error if AI is not initialized
-  if (!ai) {
+  // Show error if Groq API key is not configured
+  if (!groqApiKeys) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
@@ -638,17 +646,16 @@ const AppContent: React.FC = () => {
           }}
         >
           <h1 style={{ fontSize: "24px", marginBottom: "16px" }}>
-            🔑 API Key Required
+            🔑 Groq API Key Required
           </h1>
           <p style={{ color: "#999", marginBottom: "24px", fontSize: "14px" }}>
-            Please configure your Gemini API key to use this application.
+            Please configure your Groq API key to use this application.
           </p>
           <p style={{ color: "#666", fontSize: "12px", marginBottom: "24px" }}>
-            Get your free API key from Google AI Studio and add it to your
-            environment variables.
+            Add VITE_GROQ_API_KEY to your .env file.
           </p>
           <a
-            href="https://makersuite.google.com/app/apikey"
+            href="https://console.groq.com"
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -662,7 +669,7 @@ const AppContent: React.FC = () => {
               fontWeight: "600",
             }}
           >
-            Get API Key
+            Get Groq API Key
           </a>
         </div>
       </div>
@@ -671,10 +678,48 @@ const AppContent: React.FC = () => {
 
   return (
     <div
-      className={`theme-animate-root min-h-screen font-sans transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        theme === "dark" ? "bg-black text-white" : "bg-white text-black"
-      }`}
+      className={`theme-animate-root min-h-screen font-sans transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${theme === "dark" ? "bg-black text-white" : "bg-white text-black"
+        }`}
     >
+      {comingSoonFeature && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setComingSoonFeature(null)}
+          />
+          <div
+            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-gray-800 bg-black p-8 shadow-2xl animate-in zoom-in-95 duration-300"
+          >
+            <div className="relative z-10 space-y-8 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-gray-800 bg-gray-900/50 text-gray-400">
+                {comingSoonFeature.icon}
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-xl font-bold tracking-tight text-white uppercase">
+                  {comingSoonFeature.title}
+                </h3>
+                <div className="mx-auto h-[1px] w-8 bg-gray-800" />
+              </div>
+
+              <p className="text-sm leading-relaxed text-gray-400 font-medium">
+                {comingSoonFeature.description}
+              </p>
+
+              <div className="pt-2 text-[10px] font-bold uppercase tracking-[0.25em] text-gray-600">
+                Status: In Development
+              </div>
+
+              <button
+                onClick={() => setComingSoonFeature(null)}
+                className="w-full rounded-full border border-gray-800 bg-white py-3 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-gray-200 active:scale-95"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showTeacherInterface ? (
         <div className="animate-fade-in">
           <TeacherInterface
@@ -698,6 +743,7 @@ const AppContent: React.FC = () => {
               }, 0);
             }}
             ai={ai}
+            grokApiKey={groqApiKeys}
           />
         </div>
       ) : showStorytellerInterface ? (
@@ -723,6 +769,7 @@ const AppContent: React.FC = () => {
               }, 0);
             }}
             ai={ai}
+            grokApiKey={groqApiKeys}
           />
         </div>
       ) : showDebaterInterface ? (
@@ -748,6 +795,7 @@ const AppContent: React.FC = () => {
               }, 0);
             }}
             ai={ai}
+            grokApiKey={groqApiKeys}
           />
         </div>
       ) : showGroupDiscussionInterface ? (
@@ -775,6 +823,7 @@ const AppContent: React.FC = () => {
               }, 0);
             }}
             ai={ai}
+            grokApiKey={groqApiKeys}
           />
         </div>
       ) : (
@@ -796,16 +845,14 @@ const AppContent: React.FC = () => {
                   <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-14">
                     <div className="max-w-3xl space-y-6">
                       <p
-                        className={`text-xs sm:text-sm uppercase tracking-[0.25em] sm:tracking-[0.35em] ${
-                          theme === "dark" ? "text-gray-600" : "text-gray-500"
-                        }`}
+                        className={`text-xs sm:text-sm uppercase tracking-[0.25em] sm:tracking-[0.35em] ${theme === "dark" ? "text-gray-600" : "text-gray-500"
+                          }`}
                       >
-                        OPEN VOICE
+                        Interpret
                       </p>
                       <h2
-                        className={`text-[3rem] sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight ${
-                          theme === "dark" ? "text-white" : "text-black"
-                        }`}
+                        className={`text-[3rem] sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight ${theme === "dark" ? "text-white" : "text-black"
+                          }`}
                         style={{
                           opacity: showHeadingAnimation ? 1 : 0,
                           transform: showHeadingAnimation
@@ -818,11 +865,10 @@ const AppContent: React.FC = () => {
                         Build your explanation skills
                       </h2>
                       <p
-                        className={`text-sm sm:text-base max-w-2xl leading-relaxed ${
-                          theme === "dark"
-                            ? "text-gray-400/90"
-                            : "text-gray-600"
-                        }`}
+                        className={`text-sm sm:text-base max-w-2xl leading-relaxed ${theme === "dark"
+                          ? "text-gray-400/90"
+                          : "text-gray-600"
+                          }`}
                       >
                         Start with a random image to describe, then get instant
                         feedback and tips.
@@ -830,21 +876,19 @@ const AppContent: React.FC = () => {
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                         <button
                           onClick={() => setShowDescribeSection(true)}
-                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${
-                            theme === "dark"
-                              ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
-                              : "border-gray-800 bg-black text-white hover:bg-gray-900 hover:border-gray-700"
-                          }`}
+                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${theme === "dark"
+                            ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
+                            : "border-gray-800 bg-black text-white hover:bg-gray-900 hover:border-gray-700"
+                            }`}
                         >
                           Try Image Describe
                         </button>
                         <button
                           onClick={() => setShowDescribeSection(true)}
-                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${
-                            theme === "dark"
-                              ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
-                              : "border-gray-800 bg-black text-white hover:bg-gray-900 hover:border-gray-700"
-                          }`}
+                          className={`rounded-full border px-4 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm lg:text-base font-semibold transition-all duration-300 whitespace-nowrap min-h-[44px] touch-manipulation ${theme === "dark"
+                            ? "border-gray-600 bg-black text-white hover:bg-gray-900 hover:border-gray-500"
+                            : "border-gray-800 bg-black text-white hover:bg-gray-900 hover:border-gray-700"
+                            }`}
                         >
                           Start Now
                         </button>
@@ -854,11 +898,10 @@ const AppContent: React.FC = () => {
                         <div className="mb-6 flex flex-wrap items-center gap-2">
                           <button
                             onClick={() => setShowTeacherInterface(true)}
-                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
-                              theme === "dark"
-                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
-                            }`}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H15" />
@@ -867,11 +910,10 @@ const AppContent: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setShowDebaterInterface(true)}
-                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
-                              theme === "dark"
-                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
-                            }`}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
@@ -880,11 +922,10 @@ const AppContent: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setShowStorytellerInterface(true)}
-                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
-                              theme === "dark"
-                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
-                            }`}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -893,16 +934,67 @@ const AppContent: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setShowGroupDiscussionInterface(true)}
-                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${
-                              theme === "dark"
-                                ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
-                                : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
-                            }`}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
                           >
                             <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                             </svg>
                             <span>Group Discussion</span>
+                          </button>
+                          <button
+                            onClick={() => setComingSoonFeature({
+                              title: "Strategic Crisis Response",
+                              description: "A high-stakes simulation designed to test leadership and decisive communication while navigating evolving emergency scenarios.",
+                              color: "red",
+                              icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            })}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
+                          >
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Strategic Crisis Response</span>
+                          </button>
+                          <button
+                            onClick={() => setComingSoonFeature({
+                              title: "Mirror Persona",
+                              description: "An advanced architectural mirror that mimics communication patterns to reveal unconscious habits and refine self-awareness.",
+                              color: "blue",
+                              icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            })}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
+                          >
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>Mirror Persona</span>
+                          </button>
+                          <button
+                            onClick={() => setComingSoonFeature({
+                              title: "Play with Friend",
+                              description: "Challenge your friends to explain the same image and compare scores. See who can craft the most compelling explanation and climb the leaderboard together.",
+                              color: "green",
+                              icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                            })}
+                            className={`group relative overflow-hidden border rounded-md px-3 py-2 text-xs font-semibold cursor-pointer hover:scale-105 transition-all duration-300 flex items-center space-x-2 min-h-[36px] ${theme === "dark"
+                              ? "border-gray-600 bg-gray-700 text-gray-200 hover:bg-gray-600 hover:shadow-md hover:shadow-gray-500/20"
+                              : "border-gray-700 bg-gray-800 text-white hover:bg-gray-700 hover:shadow-md hover:shadow-gray-700/20"
+                              }`}
+                          >
+                            <svg className="h-3.5 w-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            <span>Play with Friend</span>
                           </button>
                         </div>
                         <div
@@ -925,11 +1017,10 @@ const AppContent: React.FC = () => {
                           ].map((image, i) => (
                             <div
                               key={i}
-                              className={`relative aspect-[4/3] overflow-hidden rounded-lg md:rounded-2xl border ui-card ${
-                                theme === "dark"
-                                  ? "border-gray-800/70 bg-gray-900/60"
-                                  : "border-gray-200 bg-gray-50"
-                              }`}
+                              className={`relative aspect-[4/3] overflow-hidden rounded-lg md:rounded-2xl border ui-card ${theme === "dark"
+                                ? "border-gray-800/70 bg-gray-900/60"
+                                : "border-gray-200 bg-gray-50"
+                                }`}
                             >
                               <img
                                 src={image.src}
@@ -949,23 +1040,21 @@ const AppContent: React.FC = () => {
                         <div className="mt-6 space-y-4">
                           <div>
                             <div
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-                                theme === "dark"
-                                  ? "border-gray-800 bg-gray-900/60 text-gray-300"
-                                  : "border-gray-200 bg-gray-100 text-gray-700"
-                              }`}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${theme === "dark"
+                                ? "border-gray-800 bg-gray-900/60 text-gray-300"
+                                : "border-gray-200 bg-gray-100 text-gray-700"
+                                }`}
                             >
                               <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-pulse" />
                               Built to make your ideas land
                             </div>
                             <p
-                              className={`mt-3 text-sm leading-relaxed max-w-2xl ${
-                                theme === "dark"
-                                  ? "text-gray-400"
-                                  : "text-gray-600"
-                              }`}
+                              className={`mt-3 text-sm leading-relaxed max-w-2xl ${theme === "dark"
+                                ? "text-gray-400"
+                                : "text-gray-600"
+                                }`}
                             >
-                              Open Voice helps you turn fuzzy
+                              Interpret helps you turn fuzzy
                               thoughts into crisp explanations. Practice on
                               realistic visuals, write your take, and get
                               instant feedback on clarity, structure, and
@@ -978,11 +1067,10 @@ const AppContent: React.FC = () => {
                             data-scroll-animate
                           >
                             <div
-                              className={`rounded-2xl p-5 transition-colors duration-300 border ${
-                                theme === "dark"
-                                  ? "bg-gray-900/60 border-gray-800 hover:bg-gray-900/80"
-                                  : "bg-black border-gray-800 hover:bg-gray-900"
-                              }`}
+                              className={`rounded-2xl p-5 transition-colors duration-300 border ${theme === "dark"
+                                ? "bg-gray-900/60 border-gray-800 hover:bg-gray-900/80"
+                                : "bg-black border-gray-800 hover:bg-gray-900"
+                                }`}
                             >
                               <p
                                 className="text-sm font-semibold"
@@ -999,11 +1087,10 @@ const AppContent: React.FC = () => {
                               </p>
                             </div>
                             <div
-                              className={`rounded-2xl p-5 transition-colors duration-300 border ${
-                                theme === "dark"
-                                  ? "bg-gray-900/60 border-gray-800 hover:bg-gray-900/80"
-                                  : "bg-black border-gray-800 hover:bg-gray-900"
-                              }`}
+                              className={`rounded-2xl p-5 transition-colors duration-300 border ${theme === "dark"
+                                ? "bg-gray-900/60 border-gray-800 hover:bg-gray-900/80"
+                                : "bg-black border-gray-800 hover:bg-gray-900"
+                                }`}
                             >
                               <p
                                 className="text-sm font-semibold"
@@ -1021,11 +1108,10 @@ const AppContent: React.FC = () => {
                             </div>
                             <a
                               href="#about"
-                              className={`rounded-2xl p-5 transition-colors duration-300 border ${
-                                theme === "dark"
-                                  ? "bg-gray-900/60 border-gray-800 hover:bg-gray-900/80"
-                                  : "bg-black border-gray-800 hover:bg-gray-900"
-                              }`}
+                              className={`rounded-2xl p-5 transition-colors duration-300 border ${theme === "dark"
+                                ? "bg-gray-900/60 border-gray-800 hover:bg-gray-900/80"
+                                : "bg-black border-gray-800 hover:bg-gray-900"
+                                }`}
                             >
                               <p
                                 className="text-sm font-semibold"
@@ -1046,11 +1132,10 @@ const AppContent: React.FC = () => {
                     </div>
                     <div
                       data-scroll-animate
-                      className={`w-full lg:max-w-xl rounded-3xl border p-7 space-y-5 ${
-                        theme === "dark"
-                          ? "bg-black border-gray-800 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.6)]"
-                          : "bg-white border-gray-200 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.1)]"
-                      }`}
+                      className={`w-full lg:max-w-xl rounded-3xl border p-7 space-y-5 ${theme === "dark"
+                        ? "bg-black border-gray-800 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.6)]"
+                        : "bg-white border-gray-200 shadow-[0_20px_60px_-25px_rgba(0,0,0,0.1)]"
+                        }`}
                     >
                       <HomeDomains
                         domains={imageDomains}
@@ -1280,6 +1365,99 @@ const AppContent: React.FC = () => {
                         </div>
                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl" />
                       </button>
+
+                      {/* Strategic Crisis Response */}
+                      <button
+                        onClick={() => setComingSoonFeature({
+                          title: "Strategic Crisis Response",
+                          description: "A high-stakes simulation designed to test leadership and decisive communication while navigating evolving emergency scenarios.",
+                          color: "red",
+                          icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        })}
+                        className="group relative flex h-full min-h-[140px] flex-col justify-between overflow-hidden rounded-2xl bg-black border border-gray-800 p-5 text-left transition-all duration-500 hover:-translate-y-1 hover:border-gray-600 focus:outline-none"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <h3 className="text-white font-semibold tracking-tight uppercase text-xs">
+                              Strategic Crisis Response
+                            </h3>
+                            <p className="mt-1 text-[11px] text-gray-500 leading-relaxed line-clamp-2">
+                              Lead your team through high-pressure emergency simulations
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex gap-2">
+                          <div className="text-[9px] border border-gray-800 rounded px-2 py-0.5 text-gray-600 font-bold uppercase tracking-tighter">Leadership</div>
+                          <div className="text-[9px] border border-gray-800 rounded px-2 py-0.5 text-gray-600 font-bold uppercase tracking-tighter">Decisive</div>
+                        </div>
+                        <div className="absolute top-3 right-3">
+                          <div className="text-gray-700 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 border border-gray-900 rounded">
+                            Soon
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Mirror Persona */}
+                      <button
+                        onClick={() => setComingSoonFeature({
+                          title: "Mirror Persona",
+                          description: "An advanced architectural mirror that mimics communication patterns to reveal unconscious habits and refine self-awareness.",
+                          color: "blue",
+                          icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        })}
+                        className="group relative flex h-full min-h-[140px] flex-col justify-between overflow-hidden rounded-2xl bg-black border border-gray-800 p-5 text-left transition-all duration-500 hover:-translate-y-1 hover:border-gray-600 focus:outline-none"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <h3 className="text-white font-semibold tracking-tight uppercase text-xs">
+                              Mirror Persona
+                            </h3>
+                            <p className="mt-1 text-[11px] text-gray-500 leading-relaxed line-clamp-2">
+                              Face an AI mimic that reflects your communication architectural style
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex gap-2">
+                          <div className="text-[9px] border border-gray-800 rounded px-2 py-0.5 text-gray-600 font-bold uppercase tracking-tighter">Patterns</div>
+                          <div className="text-[9px] border border-gray-800 rounded px-2 py-0.5 text-gray-600 font-bold uppercase tracking-tighter">Self-Aware</div>
+                        </div>
+                        <div className="absolute top-3 right-3">
+                          <div className="text-gray-700 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 border border-gray-900 rounded">
+                            Soon
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Play with Friend */}
+                      <button
+                        onClick={() => setComingSoonFeature({
+                          title: "Play with Friend",
+                          description: "Challenge your friends to explain the same image and compare scores. See who can craft the most compelling explanation and climb the leaderboard together.",
+                          color: "green",
+                          icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                        })}
+                        className="group relative flex h-full min-h-[140px] flex-col justify-between overflow-hidden rounded-2xl bg-black border border-gray-800 p-5 text-left transition-all duration-500 hover:-translate-y-1 hover:border-gray-600 focus:outline-none"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <h3 className="text-white font-semibold tracking-tight uppercase text-xs">
+                              Play with Friend
+                            </h3>
+                            <p className="mt-1 text-[11px] text-gray-500 leading-relaxed line-clamp-2">
+                              Challenge friends and compare scores on the same image
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex gap-2">
+                          <div className="text-[9px] border border-gray-800 rounded px-2 py-0.5 text-gray-600 font-bold uppercase tracking-tighter">Challenge</div>
+                          <div className="text-[9px] border border-gray-800 rounded px-2 py-0.5 text-gray-600 font-bold uppercase tracking-tighter">Compete</div>
+                        </div>
+                        <div className="absolute top-3 right-3">
+                          <div className="text-gray-700 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 border border-gray-900 rounded">
+                            Soon
+                          </div>
+                        </div>
+                      </button>
                     </div>
 
                     {/* Start Button */}
@@ -1348,6 +1526,12 @@ const AppContent: React.FC = () => {
                       imageUrl={imageUrl}
                       onNewImage={fetchNewImage}
                       onImageUpload={handleImageUpload}
+                      onPlayWithFriend={() => setComingSoonFeature({
+                        title: "Play with Friend",
+                        description: "Challenge your friends to explain the same image and compare scores. See who can craft the most compelling explanation and climb the leaderboard together.",
+                        color: "green",
+                        icon: <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                      })}
                       isLoading={isLoading}
                       domainTitle={activeDomain?.title}
                       domainEmoji={activeDomain?.emoji}
@@ -1403,8 +1587,9 @@ const AppContent: React.FC = () => {
           </main>
           <Footer />
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 };
 

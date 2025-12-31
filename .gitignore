@@ -60,3 +60,18 @@ coverage/
 
 # OS
 Thumbs.db
+
+# Test files
+test-*.js
+test-*.mjs
+backend/test-*.js
+
+# Unused AWS Rekognition files
+services/rekognitionService.ts
+backend/rekognitionService.js
+AWS-REKOGNITION-SETUP.md
+
+# Backup files
+*.backup.*
+*-new.*
+*-old.*

@@ -1,7 +1,7 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const multer = require('multer');
-const SpeechService = require('../speech-service');
+import multer from 'multer';
+import SpeechService from '../speech-service.js';
 
 // Configure multer for file uploads
 const upload = multer({
@@ -27,7 +27,7 @@ const getSpeechService = () => {
   return new SpeechService({
     provider,
     apiKey,
-    language: 'en-US',
+    language: 'en',
   });
 };
 
@@ -53,7 +53,7 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
     const options = {
       diarization: req.body.diarization === 'true',
       timestamps: req.body.timestamps === 'true',
-      language: req.body.language || 'en-US',
+      language: req.body.language || 'en',
     };
 
     console.log(`🎤 Transcribing with ${service.provider}...`);
@@ -209,4 +209,4 @@ router.post('/test', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

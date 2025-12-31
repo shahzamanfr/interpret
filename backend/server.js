@@ -13,6 +13,9 @@ import ffmpegStatic from "ffmpeg-static";
 import { Readable } from "stream";
 import { writeFileSync, unlinkSync, readFileSync } from "fs";
 import { tmpdir } from "os";
+import speechRoutes from "./routes/speech.js";
+
+
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
@@ -83,6 +86,9 @@ const upload = multer({
   },
 });
 
+// Register speech routes
+app.use("/api/speech", speechRoutes);
+
 // Health
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
@@ -90,36 +96,36 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.post("/api/ai/generate-content", async (req, res) => {
   try {
     if (!GEMINI_KEY) {
-      return res.status(503).json({ 
+      return res.status(503).json({
         error: "AI service unavailable",
-        message: "API key not configured" 
+        message: "API key not configured"
       });
     }
-    
+
     const { model, contents, config } = req.body || {};
     if (!model || !contents) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Invalid request",
-        message: "model and contents are required" 
+        message: "model and contents are required"
       });
     }
-    
+
     const ai = new GoogleGenerativeAI(GEMINI_KEY);
     const model_instance = ai.getGenerativeModel({ model });
     const response = await model_instance.generateContent({
       contents,
       ...config,
     });
-    
-    res.json({ 
-      text: response.text, 
-      candidates: response.candidates || null 
+
+    res.json({
+      text: response.text,
+      candidates: response.candidates || null
     });
   } catch (e) {
     const code = e?.error?.code || e?.status || 500;
     const message = e?.message || "AI processing error";
-    
-    res.status(Number(code) || 500).json({ 
+
+    res.status(Number(code) || 500).json({
       error: "AI request failed",
       message: message,
       code: code
@@ -132,36 +138,36 @@ app.get("/api/img", async (req, res) => {
   try {
     const url = req.query.url;
     if (!url || typeof url !== "string") {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Invalid request",
-        message: "URL parameter is required" 
+        message: "URL parameter is required"
       });
     }
-    
+
     // Validate URL format
     try {
       new URL(url);
     } catch {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Invalid URL",
-        message: "Please provide a valid URL" 
+        message: "Please provide a valid URL"
       });
     }
-    
+
     const upstream = await fetch(url, {
       timeout: 10000, // 10 second timeout
       headers: {
         'User-Agent': 'AI-Communication-Coach/1.0'
       }
     });
-    
+
     if (!upstream.ok) {
-      return res.status(upstream.status).json({ 
+      return res.status(upstream.status).json({
         error: "Upstream error",
-        message: `Failed to fetch image: ${upstream.statusText}` 
+        message: `Failed to fetch image: ${upstream.statusText}`
       });
     }
-    
+
     res.set("Access-Control-Allow-Origin", "*");
     res.set("Cache-Control", "public, max-age=86400, immutable");
     res.set(
@@ -170,12 +176,105 @@ app.get("/api/img", async (req, res) => {
     );
     upstream.body.pipe(res);
   } catch (e) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Proxy error",
-      message: e.message || "Failed to proxy image" 
+      message: e.message || "Failed to proxy image"
     });
   }
 });
+
+
+
+
+
+
+
+// Hugging Face BLIP vision proxy (bypasses CORS)
+app.post("/api/huggingface-vision", async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      return res.status(400).json({
+        error: "Invalid request",
+        message: "imageBase64 is required"
+      });
+    }
+
+    // Get HF API token from environment
+    const HF_TOKEN = process.env.HUGGINGFACE_API_KEY;
+
+    if (!HF_TOKEN) {
+      return res.status(503).json({
+        error: "Service unavailable",
+        message: "Hugging Face API key not configured"
+      });
+    }
+
+    console.log("🖼️ Proxying to Hugging Face BLIP...");
+
+    // Convert base64 to binary
+    const imageBuffer = Buffer.from(imageBase64, 'base64');
+
+    // Call Hugging Face Inference API
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${HF_TOKEN}`,
+        },
+        body: imageBuffer,
+      }
+    );
+
+    console.log("📥 HF Response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ HF Error:", errorText);
+
+      // If model is loading, return 503
+      if (response.status === 503) {
+        return res.status(503).json({
+          error: "Model loading",
+          message: "The vision model is loading. Please try again in 10-20 seconds.",
+          retryAfter: 15
+        });
+      }
+
+      return res.status(response.status).json({
+        error: "Hugging Face API error",
+        message: errorText
+      });
+    }
+
+    const data = await response.json();
+    const description = Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
+
+    if (!description) {
+      return res.status(500).json({
+        error: "No description generated",
+        message: "The model did not return a description"
+      });
+    }
+
+    console.log("✅ Description:", description);
+
+    res.json({
+      success: true,
+      description: description,
+      provider: "huggingface-blip"
+    });
+  } catch (error) {
+    console.error("Error in HF proxy:", error);
+    res.status(500).json({
+      error: "Proxy error",
+      message: error.message || "Failed to process image with Hugging Face"
+    });
+  }
+});
+
 
 // Speech-to-Text configuration endpoint
 app.get("/api/speech/config", (req, res) => {
@@ -239,7 +338,7 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
         message: "Audio file must be less than 10MB",
       });
     }
-    
+
     if (req.file.size < 100) {
       return res.status(400).json({
         error: "File too small",
@@ -306,23 +405,23 @@ app.post("/api/speech/transcribe", upload.single("audio"), async (req, res) => {
 async function transcribeWithGemini(audioBuffer, mimeType = 'audio/webm') {
   try {
     console.log('🚀 Gemini transcription:', audioBuffer.length, 'bytes');
-    
+
     if (!GEMINI_KEY) {
       throw new Error('Gemini API key not configured');
     }
-    
+
     // Detect MIME type from buffer if not provided
     let detectedMimeType = mimeType;
     if (!mimeType || mimeType === 'application/octet-stream') {
       // Default to webm for most browsers
       detectedMimeType = 'audio/webm';
     }
-    
 
-    
+
+
     // Convert buffer to base64
     const base64Audio = audioBuffer.toString('base64');
-    
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
       {
@@ -343,20 +442,20 @@ async function transcribeWithGemini(audioBuffer, mimeType = 'audio/webm') {
         })
       }
     );
-    
 
-    
+
+
     if (!response.ok) {
       const errorText = await response.text();
       console.log('❌ Gemini error:', errorText);
       throw new Error(`Gemini error: ${response.statusText}`);
     }
-    
+
     const result = await response.json();
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
+
     console.log('✅ Transcript:', text.substring(0, 100));
-    
+
     return {
       text: text.trim(),
       confidence: 0.9
@@ -371,10 +470,10 @@ async function convertToWav(audioBuffer) {
   return new Promise((resolve, reject) => {
     const inputPath = join(tmpdir(), `input-${Date.now()}.webm`);
     const outputPath = join(tmpdir(), `output-${Date.now()}.wav`);
-    
+
     try {
       writeFileSync(inputPath, audioBuffer);
-      
+
       ffmpeg(inputPath)
         .toFormat('wav')
         .audioCodec('pcm_s16le')
@@ -391,8 +490,8 @@ async function convertToWav(audioBuffer) {
           }
         })
         .on('error', (err) => {
-          try { unlinkSync(inputPath); } catch {}
-          try { unlinkSync(outputPath); } catch {}
+          try { unlinkSync(inputPath); } catch { }
+          try { unlinkSync(outputPath); } catch { }
           reject(err);
         })
         .save(outputPath);
@@ -406,7 +505,7 @@ async function convertToWav(audioBuffer) {
 async function transcribeWithAssemblyAI(audioBuffer) {
   try {
     console.log('📤 AssemblyAI upload:', audioBuffer.length, 'bytes');
-    
+
     // Step 1: Upload audio
     const uploadResponse = await fetch("https://api.assemblyai.com/v2/upload", {
       method: "POST",
@@ -456,7 +555,7 @@ async function transcribeWithAssemblyAI(audioBuffer) {
     // Step 3: Poll for result
     const maxAttempts = 60;
     let attempts = 0;
-    
+
     while (attempts < maxAttempts) {
       const pollingResponse = await fetch(
         `https://api.assemblyai.com/v2/transcript/${transcriptResult.id}`,
@@ -480,7 +579,7 @@ async function transcribeWithAssemblyAI(audioBuffer) {
       attempts++;
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    
+
     throw new Error("Transcription timeout");
   } catch (error) {
     throw new Error(`AssemblyAI error: ${error.message}`);
@@ -491,7 +590,7 @@ async function transcribeWithAssemblyAI(audioBuffer) {
 async function transcribeWithDeepgram(audioBuffer) {
   try {
     console.log('🚀 Deepgram:', audioBuffer.length, 'bytes');
-    
+
     const response = await fetch(
       "https://api.deepgram.com/v1/listen?model=nova-2&punctuate=true&language=en",
       {
@@ -503,7 +602,7 @@ async function transcribeWithDeepgram(audioBuffer) {
         body: audioBuffer,
       },
     );
-    
+
 
 
     if (!response.ok) {
@@ -514,11 +613,11 @@ async function transcribeWithDeepgram(audioBuffer) {
 
     const result = await response.json();
 
-    
+
     if (!result.results?.channels?.[0]?.alternatives?.[0]) {
       throw new Error("Invalid response format from Deepgram");
     }
-    
+
     const transcript = result.results.channels[0].alternatives[0];
     console.log('✅ Transcript:', transcript.transcript.substring(0, 50));
 
@@ -568,10 +667,10 @@ async function transcribeWithWhisper(audioBuffer) {
 app.listen(PORT, () => {
   console.log(`[backend] listening on :${PORT}`);
   console.log(`[backend] Speech provider: ${SPEECH_PROVIDER}`);
-  
+
   const isConfigured = SPEECH_PROVIDER === "gemini" ? !!GEMINI_KEY : !!SPEECH_API_KEY;
   console.log(`[backend] Speech API configured: ${isConfigured}`);
-  
+
   if (SPEECH_PROVIDER === "gemini" && GEMINI_KEY) {
     console.log(`[backend] ✅ Using Gemini for speech-to-text`);
   } else if (!isConfigured) {

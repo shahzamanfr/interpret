@@ -1,4 +1,4 @@
-# 🎯 Open Voice
+# 🎯 Interpret
 
 A powerful AI-powered platform to help you improve your communication skills through interactive practice with multiple coaching modes.
 

@@ -1,0 +1,166 @@
+﻿/**
+ * Grok API Service - Replaces Gemini for coaching feedback
+ * Uses xAI's Grok API (OpenAI-compatible)
+ */
+
+const GROK_API_URL = "https://api.x.ai/v1/chat/completions";
+const GROK_MODEL = "grok-beta"; // Standard text model
+const GROK_VISION_MODEL = "grok-2-vision-1212"; // Vision model for image analysis
+
+interface GrokMessage {
+    role: "system" | "user" | "assistant";
+    content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+}
+
+interface GrokResponse {
+    choices: Array<{
+        message: {
+            content: string;
+        };
+    }>;
+}
+
+/**
+ * Call Grok API with messages
+ */
+async function callGrok(
+    apiKey: string,
+    messages: GrokMessage[],
+    options?: {
+        temperature?: number;
+        maxTokens?: number;
+        model?: string;
+    }
+): Promise<string> {
+    const requestBody = {
+        model: options?.model || GROK_MODEL,
+        messages,
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.maxTokens ?? 2000,
+    };
+
+    console.log("ðŸš€ GROK API REQUEST:", {
+        url: GROK_API_URL,
+        model: requestBody.model,
+        temperature: requestBody.temperature,
+        max_tokens: requestBody.max_tokens,
+        messageCount: messages.length,
+        hasImageContent: messages.some(m =>
+            Array.isArray(m.content) &&
+            m.content.some((c: any) => c.type === "image_url")
+        )
+    });
+
+    // Log message structure (without full base64 to avoid console spam)
+    messages.forEach((msg, idx) => {
+        if (Array.isArray(msg.content)) {
+            console.log(`ðŸ“ Message ${idx} (${msg.role}):`,
+                msg.content.map((c: any) => ({
+                    type: c.type,
+                    hasText: !!c.text,
+                    hasImage: !!c.image_url,
+                    imageUrlLength: c.image_url?.url?.length
+                }))
+            );
+        } else {
+            console.log(`ðŸ“ Message ${idx} (${msg.role}): ${typeof msg.content === 'string' ? msg.content.substring(0, 100) : msg.content}`);
+        }
+    });
+
+    const response = await fetch(GROK_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+    });
+
+    console.log("ðŸ“¥ GROK API RESPONSE STATUS:", response.status, response.statusText);
+
+    if (!response.ok) {
+        const error = await response.text();
+        console.error("âŒ GROK API ERROR:", error);
+        throw new Error(`Grok API error: ${response.status} - ${error}`);
+    }
+
+    const data: GrokResponse = await response.json();
+    console.log("âœ… GROK API SUCCESS:", {
+        hasChoices: !!data.choices,
+        choiceCount: data.choices?.length,
+        contentLength: data.choices?.[0]?.message?.content?.length,
+        contentPreview: data.choices?.[0]?.message?.content?.substring(0, 200)
+    });
+
+    return data.choices[0]?.message?.content || "";
+}
+
+/**
+ * Describe an image using Hugging Face BLIP model (via backend proxy to avoid CORS)
+ * Note: apiKey parameter kept for compatibility but not used
+ */
+export async function describeImageWithGrok(
+    apiKey: string,
+    imageBase64: string
+): Promise<string> {
+    console.log("ðŸ–¼ï¸ Using Hugging Face BLIP for image description (via backend proxy)...");
+    console.log("ðŸ“Š Image data length:", imageBase64.length);
+
+    try {
+        // Call backend proxy instead of HF API directly (avoids CORS)
+        const BACKEND_URL = "http://localhost:8787/api/huggingface-vision";
+
+        console.log("ðŸ“¤ Sending request to backend proxy...");
+
+        const response = await fetch(BACKEND_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                imageBase64: imageBase64,
+            }),
+        });
+
+        console.log("ðŸ“¥ Backend Response status:", response.status);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error("âŒ Backend error:", errorData);
+
+            // If model is loading, wait and retry
+            if (response.status === 503 && errorData.retryAfter) {
+                console.log(`â³ Model loading, waiting ${errorData.retryAfter} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, errorData.retryAfter * 1000));
+
+                // Retry once
+                const retryResponse = await fetch(BACKEND_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ imageBase64 }),
+                });
+
+                if (!retryResponse.ok) {
+                    throw new Error(`Backend error after retry: ${retryResponse.status}`);
+                }
+
+                const retryData = await retryResponse.json();
+                console.log("âœ… Description (after retry):", retryData.description);
+                return retryData.description || "Unable to describe image";
+            }
+
+            throw new Error(errorData.message || `Backend error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("âœ… Hugging Face description:", data.description);
+
+        return data.description;
+
+    } catch (error) {
+        console.error("âŒ Error in Hugging Face vision:", error);
+        throw error;
+    }
+}
+
+// ... rest of the file remains the same

@@ -1,15 +1,16 @@
 // Speech-to-Text Service with Multiple API Options
 // Supports: Web Speech API (browser), AssemblyAI, Deepgram, OpenAI Whisper, Google Cloud
 
-const fs = require('fs');
-const axios = require('axios');
-const FormData = require('form-data');
+import fs from 'fs';
+import axios from 'axios';
+import FormData from 'form-data';
+import WebSocket from 'ws';
 
 class SpeechService {
   constructor(config = {}) {
     this.provider = config.provider || 'browser'; // 'browser', 'assemblyai', 'deepgram', 'whisper', 'google'
     this.apiKey = config.apiKey || process.env.SPEECH_API_KEY;
-    this.language = config.language || 'en-US';
+    this.language = config.language || 'en';
   }
 
   /**
@@ -286,7 +287,6 @@ class SpeechService {
   }
 
   async streamDeepgram(audioStream, callback) {
-    const WebSocket = require('ws');
     const ws = new WebSocket(
       `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&language=${this.language}`,
       {
@@ -330,7 +330,6 @@ class SpeechService {
   }
 
   async streamAssemblyAI(audioStream, callback) {
-    const WebSocket = require('ws');
     const ws = new WebSocket(
       `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${this.apiKey}`
     );
@@ -377,7 +376,7 @@ class SpeechService {
 }
 
 // Export service
-module.exports = SpeechService;
+export default SpeechService;
 
 // Example usage:
 /*

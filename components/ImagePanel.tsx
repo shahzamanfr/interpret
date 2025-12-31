@@ -6,6 +6,7 @@ interface ImagePanelProps {
   imageUrl: string;
   onNewImage: () => void;
   onImageUpload?: (imageUrl: string) => void;
+  onPlayWithFriend?: () => void;
   isLoading: boolean;
   domainTitle?: string;
   domainEmoji?: string;
@@ -18,6 +19,7 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
       imageUrl,
       onNewImage,
       onImageUpload,
+      onPlayWithFriend,
       isLoading,
       domainTitle,
       domainEmoji,
@@ -63,13 +65,13 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
           alert('Please select a valid image file');
           return;
         }
-        
+
         // Validate file size (max 5MB)
         if (file.size > 5 * 1024 * 1024) {
           alert('Image file must be less than 5MB');
           return;
         }
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result as string;
@@ -104,11 +106,10 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
               </h2>
               {showDomainDetails && (
                 <span
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium ${
-                    theme === "dark"
-                      ? "border-gray-800 bg-gray-900/70 text-gray-300"
-                      : "border-gray-300 bg-gray-100 text-gray-700"
-                  }`}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium ${theme === "dark"
+                    ? "border-gray-800 bg-gray-900/70 text-gray-300"
+                    : "border-gray-300 bg-gray-100 text-gray-700"
+                    }`}
                 >
                   <span className="text-base" aria-hidden>
                     {domainEmoji}
@@ -136,11 +137,10 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
               type="button"
               onClick={onNewImage}
               disabled={isLoading}
-              className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-                theme === "dark"
-                  ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
-                  : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
-              }`}
+              className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${theme === "dark"
+                ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
+                : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
+                }`}
               aria-label="Get new image"
             >
               <PlusIcon className="h-5 w-5" />
@@ -159,11 +159,10 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
                   type="button"
                   onClick={handleUploadClick}
                   disabled={isLoading}
-                  className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-                    theme === "dark"
-                      ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
-                      : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
-                  }`}
+                  className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${theme === "dark"
+                    ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
+                    : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
+                    }`}
                   aria-label="Upload your own image"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -171,6 +170,23 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
                   </svg>
                 </button>
               </>
+            )}
+            {onPlayWithFriend && (
+              <button
+                type="button"
+                onClick={onPlayWithFriend}
+                disabled={isLoading}
+                className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${theme === "dark"
+                    ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
+                    : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
+                  }`}
+                aria-label="Play with friend"
+                title="Play with Friend"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </button>
             )}
           </div>
         </div>
@@ -198,9 +214,8 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
             </div>
           )}
           <div
-            className={`pointer-events-none absolute inset-0 bg-gradient-to-t via-transparent to-transparent ${
-              theme === "dark" ? "from-gray-950/40" : "from-gray-950/10"
-            }`}
+            className={`pointer-events-none absolute inset-0 bg-gradient-to-t via-transparent to-transparent ${theme === "dark" ? "from-gray-950/40" : "from-gray-950/10"
+              }`}
             aria-hidden
           />
         </div>

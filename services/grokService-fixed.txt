@@ -1,0 +1,67 @@
+/**
+ * Describe an image using Hugging Face BLIP model (via backend proxy to avoid CORS)
+ * Note: apiKey parameter kept for compatibility but not used
+ */
+export async function describeImageWithGrok(
+    apiKey: string,
+    imageBase64: string
+): Promise<string> {
+    console.log("🖼️ Using Hugging Face BLIP (via backend proxy)...");
+    console.log("📊 Image data length:", imageBase64.length);
+
+    try {
+        // Call backend proxy instead of HF API directly (avoids CORS)
+        const BACKEND_URL = "http://localhost:8787/api/huggingface-vision";
+        
+        console.log("📤 Sending to backend proxy...");
+        
+        const response = await fetch(BACKEND_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                imageBase64: imageBase64,
+            }),
+        });
+
+        console.log("📥 Backend response:", response.status);
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error("❌ Backend error:", errorData);
+            
+            // If model is loading, wait and retry
+            if (response.status === 503 && errorData.retryAfter) {
+                console.log(`⏳ Model loading, waiting ${errorData.retryAfter}s...`);
+                await new Promise(resolve => setTimeout(resolve, errorData.retryAfter * 1000));
+                
+                // Retry once
+                const retryResponse = await fetch(BACKEND_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ imageBase64 }),
+                });
+                
+                if (!retryResponse.ok) {
+                    throw new Error(`Backend error after retry: ${retryResponse.status}`);
+                }
+                
+                const retryData = await retryResponse.json();
+                console.log("✅ Description (retry):", retryData.description);
+                return retryData.description || "Unable to describe image";
+            }
+            
+            throw new Error(errorData.message || `Backend error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("✅ HF description:", data.description);
+        
+        return data.description;
+        
+    } catch (error) {
+        console.error("❌ Error in HF vision:", error);
+        throw error;
+    }
+}

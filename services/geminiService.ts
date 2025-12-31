@@ -3,8 +3,7 @@ import { CoachMode, Feedback, UploadedFile } from "../types";
 
 // Centralized model candidates and retry helper to improve resiliency against transient 503s
 const DEFAULT_MODEL_CANDIDATES = [
-  // Prefer widely available, fast models first
-  "gemini-1.5-flash",
+  // Only using Gemini 2.0+ (1.5 is deprecated/not found)
   "gemini-2.0-flash",
   "gemini-2.5-flash",
 ];
@@ -37,8 +36,8 @@ async function callWithRetry<T>(
     perAttemptTimeoutMs?: number;
   },
 ): Promise<T> {
-  const retries = options?.retries ?? 2;
-  const initialDelayMs = options?.initialDelayMs ?? 400;
+  const retries = options?.retries ?? 1; // Reduced from 2 to avoid rate limits
+  const initialDelayMs = options?.initialDelayMs ?? 800; // Increased delay
   const perAttemptTimeoutMs = options?.perAttemptTimeoutMs ?? 7000;
   const models = getModelCandidates(options?.preferredModel);
 
@@ -102,29 +101,29 @@ async function callWithRetry<T>(
 
   // Check if it's a rate limit error and provide user-friendly message
   const lastErrorMessage = lastError instanceof Error ? lastError.message : String(lastError);
-  const isRateLimit = lastErrorMessage.includes("Resource exhausted") || 
-                      lastErrorMessage.includes("RESOURCE_EXHAUSTED") ||
-                      lastErrorMessage.includes("429");
-  
+  const isRateLimit = lastErrorMessage.includes("Resource exhausted") ||
+    lastErrorMessage.includes("RESOURCE_EXHAUSTED") ||
+    lastErrorMessage.includes("429");
+
   const isQuotaExceeded = lastErrorMessage.includes("quota") ||
-                         lastErrorMessage.includes("QUOTA_EXCEEDED");
-  
+    lastErrorMessage.includes("QUOTA_EXCEEDED");
+
   const isNetworkError = lastErrorMessage.includes("Failed to fetch") ||
-                        lastErrorMessage.includes("NetworkError") ||
-                        lastErrorMessage.includes("ERR_NETWORK");
-  
+    lastErrorMessage.includes("NetworkError") ||
+    lastErrorMessage.includes("ERR_NETWORK");
+
   if (isRateLimit) {
     throw new Error("⚠️ Server is busy due to high traffic. Please try again in a few moments.");
   }
-  
+
   if (isQuotaExceeded) {
     throw new Error("⚠️ API quota exceeded. Please try again later or contact support.");
   }
-  
+
   if (isNetworkError) {
     throw new Error("⚠️ Network connection issue. Please check your internet and try again.");
   }
-  
+
   throw lastError ?? new Error("Unknown error calling Gemini API");
 }
 
@@ -267,12 +266,12 @@ export async function getExplanationStrategy(
       return ai.models.generateContent({
         model,
         contents: [
-          { role: "user", parts: [imagePart, { text: systemInstruction }] },
+          { parts: [imagePart, { text: systemInstruction }] },
         ],
         config: { temperature: 0.2 },
       });
     },
-    { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 6000 },
+    { preferredModel: "gemini-2.0-flash", perAttemptTimeoutMs: 6000 },
   );
   return response.text.trim();
 }
@@ -297,7 +296,7 @@ export async function generateImageCaption(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model,
-            contents: [{ role: "user", parts: [imagePart, { text: prompt }] }],
+            contents: [{ parts: [imagePart, { text: prompt }] }],
           }),
         });
         if (!r.ok) throw new Error(`Proxy error ${r.status}`);
@@ -306,10 +305,10 @@ export async function generateImageCaption(
       }
       return ai.models.generateContent({
         model,
-        contents: [{ role: "user", parts: [imagePart, { text: prompt }] }],
+        contents: [{ parts: [imagePart, { text: prompt }] }],
       });
     },
-    { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 7000 },
+    { preferredModel: "gemini-2.0-flash", perAttemptTimeoutMs: 7000 },
   );
   return response.text;
 }
@@ -508,7 +507,7 @@ Write 4-6 sentences. Mix sentence lengths. Sound human, not formulaic.`;
             },
           },
         }),
-      { preferredModel: "gemini-1.5-flash", perAttemptTimeoutMs: 7000 },
+      { preferredModel: "gemini-2.0-flash", perAttemptTimeoutMs: 7000 },
     );
 
     const result = JSON.parse(response.text);
@@ -684,180 +683,180 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
         config: {
           temperature: 0.3,
           responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          role: {
-            type: Type.STRING,
-            description: "The coaching role used (Debater).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description:
-              "Overall score out of 100 based on comprehensive analysis.",
-          },
-          category_scores: {
+          responseSchema: {
             type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 categories (0-20 each).",
             properties: {
-              argumentStrength: {
+              role: {
+                type: Type.STRING,
+                description: "The coaching role used (Debater).",
+              },
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Argument Strength score (0-20).",
+                description:
+                  "Overall score out of 100 based on comprehensive analysis.",
               },
-              evidenceSupport: {
-                type: Type.INTEGER,
-                description: "Evidence & Support score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 categories (0-20 each).",
+                properties: {
+                  argumentStrength: {
+                    type: Type.INTEGER,
+                    description: "Argument Strength score (0-20).",
+                  },
+                  evidenceSupport: {
+                    type: Type.INTEGER,
+                    description: "Evidence & Support score (0-20).",
+                  },
+                  logicalReasoning: {
+                    type: Type.INTEGER,
+                    description: "Logical Reasoning score (0-20).",
+                  },
+                  rebuttalEffectiveness: {
+                    type: Type.INTEGER,
+                    description: "Rebuttal Effectiveness score (0-20).",
+                  },
+                  persuasionImpact: {
+                    type: Type.INTEGER,
+                    description: "Persuasion & Impact score (0-20).",
+                  },
+                  engagementResponsiveness: {
+                    type: Type.INTEGER,
+                    description: "Engagement & Responsiveness score (0-20).",
+                  },
+                },
+                required: [
+                  "argumentStrength",
+                  "evidenceSupport",
+                  "logicalReasoning",
+                  "rebuttalEffectiveness",
+                  "persuasionImpact",
+                  "engagementResponsiveness",
+                ],
               },
-              logicalReasoning: {
-                type: Type.INTEGER,
-                description: "Logical Reasoning score (0-20).",
-              },
-              rebuttalEffectiveness: {
-                type: Type.INTEGER,
-                description: "Rebuttal Effectiveness score (0-20).",
-              },
-              persuasionImpact: {
-                type: Type.INTEGER,
-                description: "Persuasion & Impact score (0-20).",
-              },
-              engagementResponsiveness: {
-                type: Type.INTEGER,
-                description: "Engagement & Responsiveness score (0-20).",
-              },
-            },
-            required: [
-              "argumentStrength",
-              "evidenceSupport",
-              "logicalReasoning",
-              "rebuttalEffectiveness",
-              "persuasionImpact",
-              "engagementResponsiveness",
-            ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "Comprehensive feedback analyzing the entire debate performance with specific examples.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "5-7 specific improvement tips based on actual performance in the debate.",
-          },
-          // Legacy fields for backward compatibility
-          score: {
-            type: Type.INTEGER,
-            description: "Legacy overall score (same as overall_score).",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "BRIEF strengths - MAX 1 sentence.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "BRIEF improvement areas - MAX 1 sentence.",
-          },
-          personalizedTip: {
-            type: Type.STRING,
-            description: "SHORT personalized tip - MAX 1 sentence.",
-          },
-          spokenResponse: {
-            type: Type.STRING,
-            description: "BRIEF spoken summary - MAX 1 sentence.",
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description:
-              "Communication profile analysis based on debate performance.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "BRIEF debate profile - MAX 3 words.",
-              },
-              strength: {
-                type: Type.STRING,
-                description: "BRIEF key strength - MAX 1 sentence.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "BRIEF growth area - MAX 1 sentence.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description:
-              "Example improvement of a specific argument from the debate.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description: "Original argument from the debate.",
-              },
-              improved: {
-                type: Type.STRING,
-                description: "Improved version of the argument.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description: "Reasoning for the improvement.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-          debateAnalysis: {
-            type: Type.OBJECT,
-            description: "Detailed analysis of the debate performance.",
-            properties: {
-              strongestArgument: {
-                type: Type.STRING,
-                description: "The user's strongest argument from the debate.",
-              },
-              weakestArgument: {
-                type: Type.STRING,
-                description: "The user's weakest argument from the debate.",
-              },
-              bestRebuttal: {
-                type: Type.STRING,
-                description: "The user's best rebuttal to the AI.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description: "Key opportunities the user missed.",
-              },
-              improvementOverTime: {
+              feedback: {
                 type: Type.STRING,
                 description:
-                  "How the user's performance changed throughout the debate.",
+                  "Comprehensive feedback analyzing the entire debate performance with specific examples.",
+              },
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description:
+                  "5-7 specific improvement tips based on actual performance in the debate.",
+              },
+              // Legacy fields for backward compatibility
+              score: {
+                type: Type.INTEGER,
+                description: "Legacy overall score (same as overall_score).",
+              },
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "BRIEF strengths - MAX 1 sentence.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "BRIEF improvement areas - MAX 1 sentence.",
+              },
+              personalizedTip: {
+                type: Type.STRING,
+                description: "SHORT personalized tip - MAX 1 sentence.",
+              },
+              spokenResponse: {
+                type: Type.STRING,
+                description: "BRIEF spoken summary - MAX 1 sentence.",
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description:
+                  "Communication profile analysis based on debate performance.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "BRIEF debate profile - MAX 3 words.",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "BRIEF key strength - MAX 1 sentence.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "BRIEF growth area - MAX 1 sentence.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description:
+                  "Example improvement of a specific argument from the debate.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "Original argument from the debate.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "Improved version of the argument.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description: "Reasoning for the improvement.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
+              },
+              debateAnalysis: {
+                type: Type.OBJECT,
+                description: "Detailed analysis of the debate performance.",
+                properties: {
+                  strongestArgument: {
+                    type: Type.STRING,
+                    description: "The user's strongest argument from the debate.",
+                  },
+                  weakestArgument: {
+                    type: Type.STRING,
+                    description: "The user's weakest argument from the debate.",
+                  },
+                  bestRebuttal: {
+                    type: Type.STRING,
+                    description: "The user's best rebuttal to the AI.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description: "Key opportunities the user missed.",
+                  },
+                  improvementOverTime: {
+                    type: Type.STRING,
+                    description:
+                      "How the user's performance changed throughout the debate.",
+                  },
+                },
+                required: [
+                  "strongestArgument",
+                  "weakestArgument",
+                  "bestRebuttal",
+                  "missedOpportunities",
+                  "improvementOverTime",
+                ],
               },
             },
             required: [
-              "strongestArgument",
-              "weakestArgument",
-              "bestRebuttal",
-              "missedOpportunities",
-              "improvementOverTime",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "exampleRewrite",
+              "debateAnalysis",
             ],
           },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "score",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "personalizedTip",
-          "spokenResponse",
-          "communicationBehavior",
-          "exampleRewrite",
-          "debateAnalysis",
-        ],
-      },
         },
       }),
     { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 12000 },
@@ -988,168 +987,168 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
               role: {
                 type: Type.STRING,
                 description: "The coaching role used (Teacher).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description: "Overall teaching score out of 100 - INDEPENDENT evaluation of complete teaching effectiveness, NOT calculated from category scores.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 teaching categories (0-20 each).",
-            properties: {
-              clarity: {
-                type: Type.INTEGER,
-                description: "Clarity & Explanation score (0-20).",
               },
-              structure: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Structure & Organization score (0-20).",
+                description: "Overall teaching score out of 100 - INDEPENDENT evaluation of complete teaching effectiveness, NOT calculated from category scores.",
               },
-              engagement: {
-                type: Type.INTEGER,
-                description: "Engagement & Interest score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 teaching categories (0-20 each).",
+                properties: {
+                  clarity: {
+                    type: Type.INTEGER,
+                    description: "Clarity & Explanation score (0-20).",
+                  },
+                  structure: {
+                    type: Type.INTEGER,
+                    description: "Structure & Organization score (0-20).",
+                  },
+                  engagement: {
+                    type: Type.INTEGER,
+                    description: "Engagement & Interest score (0-20).",
+                  },
+                  educationalValue: {
+                    type: Type.INTEGER,
+                    description: "Educational Value score (0-20).",
+                  },
+                  accessibility: {
+                    type: Type.INTEGER,
+                    description: "Accessibility & Adaptability score (0-20).",
+                  },
+                  completeness: {
+                    type: Type.INTEGER,
+                    description: "Completeness & Depth score (0-20).",
+                  },
+                },
+                required: [
+                  "clarity",
+                  "structure",
+                  "engagement",
+                  "educationalValue",
+                  "accessibility",
+                  "completeness",
+                ],
               },
-              educationalValue: {
-                type: Type.INTEGER,
-                description: "Educational Value score (0-20).",
+              feedback: {
+                type: Type.STRING,
+                description:
+                  "Comprehensive teaching feedback with specific examples.",
               },
-              accessibility: {
-                type: Type.INTEGER,
-                description: "Accessibility & Adaptability score (0-20).",
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "5-7 specific teaching improvement tips.",
               },
-              completeness: {
+              // Legacy fields for backward compatibility
+              score: {
                 type: Type.INTEGER,
-                description: "Completeness & Depth score (0-20).",
+                description: "Legacy overall score (same as overall_score).",
+              },
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "Specific teaching strengths with examples.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "Specific areas for teaching improvement.",
+              },
+              personalizedTip: {
+                type: Type.STRING,
+                description: "Most important teaching tip.",
+              },
+              spokenResponse: {
+                type: Type.STRING,
+                description: "BRIEF spoken summary - MAX 1 sentence.",
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description: "Teaching style analysis.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "Teaching style profile (2-4 words).",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "Key teaching strength.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "Primary teaching growth area.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description: "Example teaching improvement.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "Original teaching explanation.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "Improved teaching explanation.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description: "Reasoning for improvement.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
+              },
+              teachingAnalysis: {
+                type: Type.OBJECT,
+                description: "Detailed teaching analysis.",
+                properties: {
+                  strongestMoment: {
+                    type: Type.STRING,
+                    description: "The user's strongest teaching moment.",
+                  },
+                  weakestMoment: {
+                    type: Type.STRING,
+                    description: "The user's weakest teaching moment.",
+                  },
+                  bestExplanation: {
+                    type: Type.STRING,
+                    description: "The user's best explanation technique.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description: "Key teaching opportunities missed.",
+                  },
+                  audienceAdaptation: {
+                    type: Type.STRING,
+                    description: "How well they adapted to their audience.",
+                  },
+                },
+                required: [
+                  "strongestMoment",
+                  "weakestMoment",
+                  "bestExplanation",
+                  "missedOpportunities",
+                  "audienceAdaptation",
+                ],
               },
             },
             required: [
-              "clarity",
-              "structure",
-              "engagement",
-              "educationalValue",
-              "accessibility",
-              "completeness",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "exampleRewrite",
+              "teachingAnalysis",
             ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "Comprehensive teaching feedback with specific examples.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: "5-7 specific teaching improvement tips.",
-          },
-          // Legacy fields for backward compatibility
-          score: {
-            type: Type.INTEGER,
-            description: "Legacy overall score (same as overall_score).",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "Specific teaching strengths with examples.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "Specific areas for teaching improvement.",
-          },
-          personalizedTip: {
-            type: Type.STRING,
-            description: "Most important teaching tip.",
-          },
-          spokenResponse: {
-            type: Type.STRING,
-            description: "BRIEF spoken summary - MAX 1 sentence.",
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description: "Teaching style analysis.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "Teaching style profile (2-4 words).",
-              },
-              strength: {
-                type: Type.STRING,
-                description: "Key teaching strength.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "Primary teaching growth area.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description: "Example teaching improvement.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description: "Original teaching explanation.",
-              },
-              improved: {
-                type: Type.STRING,
-                description: "Improved teaching explanation.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description: "Reasoning for improvement.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-          teachingAnalysis: {
-            type: Type.OBJECT,
-            description: "Detailed teaching analysis.",
-            properties: {
-              strongestMoment: {
-                type: Type.STRING,
-                description: "The user's strongest teaching moment.",
-              },
-              weakestMoment: {
-                type: Type.STRING,
-                description: "The user's weakest teaching moment.",
-              },
-              bestExplanation: {
-                type: Type.STRING,
-                description: "The user's best explanation technique.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description: "Key teaching opportunities missed.",
-              },
-              audienceAdaptation: {
-                type: Type.STRING,
-                description: "How well they adapted to their audience.",
-              },
-            },
-            required: [
-              "strongestMoment",
-              "weakestMoment",
-              "bestExplanation",
-              "missedOpportunities",
-              "audienceAdaptation",
-            ],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "score",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "personalizedTip",
-          "spokenResponse",
-          "communicationBehavior",
-          "exampleRewrite",
-          "teachingAnalysis",
-        ],
           },
         },
       }),
@@ -1273,168 +1272,168 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
               role: {
                 type: Type.STRING,
                 description: "The coaching role used (Storyteller).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description: "Overall storytelling score out of 100.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 storytelling categories (0-20 each).",
-            properties: {
-              narrativeStructure: {
-                type: Type.INTEGER,
-                description: "Narrative Structure score (0-20).",
               },
-              characterDevelopment: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Character Development score (0-20).",
+                description: "Overall storytelling score out of 100.",
               },
-              descriptiveLanguage: {
-                type: Type.INTEGER,
-                description: "Descriptive Language score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 storytelling categories (0-20 each).",
+                properties: {
+                  narrativeStructure: {
+                    type: Type.INTEGER,
+                    description: "Narrative Structure score (0-20).",
+                  },
+                  characterDevelopment: {
+                    type: Type.INTEGER,
+                    description: "Character Development score (0-20).",
+                  },
+                  descriptiveLanguage: {
+                    type: Type.INTEGER,
+                    description: "Descriptive Language score (0-20).",
+                  },
+                  emotionalImpact: {
+                    type: Type.INTEGER,
+                    description: "Emotional Impact score (0-20).",
+                  },
+                  creativity: {
+                    type: Type.INTEGER,
+                    description: "Creativity & Originality score (0-20).",
+                  },
+                  engagement: {
+                    type: Type.INTEGER,
+                    description: "Engagement & Pacing score (0-20).",
+                  },
+                },
+                required: [
+                  "narrativeStructure",
+                  "characterDevelopment",
+                  "descriptiveLanguage",
+                  "emotionalImpact",
+                  "creativity",
+                  "engagement",
+                ],
               },
-              emotionalImpact: {
-                type: Type.INTEGER,
-                description: "Emotional Impact score (0-20).",
+              feedback: {
+                type: Type.STRING,
+                description:
+                  "Comprehensive storytelling feedback with specific examples.",
               },
-              creativity: {
-                type: Type.INTEGER,
-                description: "Creativity & Originality score (0-20).",
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "5-7 specific storytelling improvement tips.",
               },
-              engagement: {
+              // Legacy fields for backward compatibility
+              score: {
                 type: Type.INTEGER,
-                description: "Engagement & Pacing score (0-20).",
+                description: "Legacy overall score (same as overall_score).",
+              },
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "Specific storytelling strengths with examples.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "Specific areas for storytelling improvement.",
+              },
+              personalizedTip: {
+                type: Type.STRING,
+                description: "Most important storytelling tip.",
+              },
+              spokenResponse: {
+                type: Type.STRING,
+                description: "BRIEF spoken summary - MAX 1 sentence.",
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description: "Storytelling style analysis.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "Storytelling style profile (2-4 words).",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "Key storytelling strength.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "Primary storytelling growth area.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description: "Example storytelling improvement.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "Original story passage.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "Improved story passage.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description: "Reasoning for improvement.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
+              },
+              storytellingAnalysis: {
+                type: Type.OBJECT,
+                description: "Detailed storytelling analysis.",
+                properties: {
+                  strongestMoment: {
+                    type: Type.STRING,
+                    description: "The user's strongest storytelling moment.",
+                  },
+                  weakestMoment: {
+                    type: Type.STRING,
+                    description: "The user's weakest storytelling moment.",
+                  },
+                  bestTechnique: {
+                    type: Type.STRING,
+                    description: "The user's best storytelling technique.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description: "Key storytelling opportunities missed.",
+                  },
+                  emotionalConnection: {
+                    type: Type.STRING,
+                    description: "How well they created emotional connection.",
+                  },
+                },
+                required: [
+                  "strongestMoment",
+                  "weakestMoment",
+                  "bestTechnique",
+                  "missedOpportunities",
+                  "emotionalConnection",
+                ],
               },
             },
             required: [
-              "narrativeStructure",
-              "characterDevelopment",
-              "descriptiveLanguage",
-              "emotionalImpact",
-              "creativity",
-              "engagement",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "exampleRewrite",
+              "storytellingAnalysis",
             ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "Comprehensive storytelling feedback with specific examples.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: "5-7 specific storytelling improvement tips.",
-          },
-          // Legacy fields for backward compatibility
-          score: {
-            type: Type.INTEGER,
-            description: "Legacy overall score (same as overall_score).",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "Specific storytelling strengths with examples.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "Specific areas for storytelling improvement.",
-          },
-          personalizedTip: {
-            type: Type.STRING,
-            description: "Most important storytelling tip.",
-          },
-          spokenResponse: {
-            type: Type.STRING,
-            description: "BRIEF spoken summary - MAX 1 sentence.",
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description: "Storytelling style analysis.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "Storytelling style profile (2-4 words).",
-              },
-              strength: {
-                type: Type.STRING,
-                description: "Key storytelling strength.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "Primary storytelling growth area.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description: "Example storytelling improvement.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description: "Original story passage.",
-              },
-              improved: {
-                type: Type.STRING,
-                description: "Improved story passage.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description: "Reasoning for improvement.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-          storytellingAnalysis: {
-            type: Type.OBJECT,
-            description: "Detailed storytelling analysis.",
-            properties: {
-              strongestMoment: {
-                type: Type.STRING,
-                description: "The user's strongest storytelling moment.",
-              },
-              weakestMoment: {
-                type: Type.STRING,
-                description: "The user's weakest storytelling moment.",
-              },
-              bestTechnique: {
-                type: Type.STRING,
-                description: "The user's best storytelling technique.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description: "Key storytelling opportunities missed.",
-              },
-              emotionalConnection: {
-                type: Type.STRING,
-                description: "How well they created emotional connection.",
-              },
-            },
-            required: [
-              "strongestMoment",
-              "weakestMoment",
-              "bestTechnique",
-              "missedOpportunities",
-              "emotionalConnection",
-            ],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "score",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "personalizedTip",
-          "spokenResponse",
-          "communicationBehavior",
-          "exampleRewrite",
-          "storytellingAnalysis",
-        ],
           },
         },
       }),
@@ -1488,130 +1487,130 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
             type: Type.OBJECT,
             properties: {
               role: { type: Type.STRING, description: "The coaching role used." },
-          overall_score: {
-            type: Type.INTEGER,
-            description: "Overall score out of 100.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 categories (0-20 each).",
-            properties: {
-              clarity: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Clarity score (0-20).",
+                description: "Overall score out of 100.",
               },
-              vocabulary: {
-                type: Type.INTEGER,
-                description: "Vocabulary score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 categories (0-20 each).",
+                properties: {
+                  clarity: {
+                    type: Type.INTEGER,
+                    description: "Clarity score (0-20).",
+                  },
+                  vocabulary: {
+                    type: Type.INTEGER,
+                    description: "Vocabulary score (0-20).",
+                  },
+                  grammar: {
+                    type: Type.INTEGER,
+                    description: "Grammar score (0-20).",
+                  },
+                  logic: { type: Type.INTEGER, description: "Logic score (0-20)." },
+                  fluency: {
+                    type: Type.INTEGER,
+                    description: "Fluency score (0-20).",
+                  },
+                  creativity: {
+                    type: Type.INTEGER,
+                    description: "Creativity score (0-20).",
+                  },
+                },
+                required: [
+                  "clarity",
+                  "vocabulary",
+                  "grammar",
+                  "logic",
+                  "fluency",
+                  "creativity",
+                ],
               },
-              grammar: {
-                type: Type.INTEGER,
-                description: "Grammar score (0-20).",
+              feedback: {
+                type: Type.STRING,
+                description: "Role-specific feedback message.",
               },
-              logic: { type: Type.INTEGER, description: "Logic score (0-20)." },
-              fluency: {
-                type: Type.INTEGER,
-                description: "Fluency score (0-20).",
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "3-5 personalized improvement tips.",
               },
-              creativity: {
+              // Legacy fields for backward compatibility
+              score: {
                 type: Type.INTEGER,
-                description: "Creativity score (0-20).",
+                description: "Legacy overall score (same as overall_score).",
+              },
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "What they did well.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "Areas for improvement.",
+              },
+              personalizedTip: {
+                type: Type.STRING,
+                description: "Personalized tip.",
+              },
+              spokenResponse: {
+                type: Type.STRING,
+                description: "Spoken response.",
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description: "Communication profile analysis - REQUIRED FIELD.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description:
+                      'Communication style profile (e.g., "Concise Communicator", "Detail-Oriented", "Storyteller").',
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "Primary communication strength.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "Main area for improvement.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description: "Example improvement - REQUIRED FIELD.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "The user's original explanation.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "An improved version of their explanation.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description: "Why the improved version is better.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
               },
             },
             required: [
-              "clarity",
-              "vocabulary",
-              "grammar",
-              "logic",
-              "fluency",
-              "creativity",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "exampleRewrite",
             ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description: "Role-specific feedback message.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: "3-5 personalized improvement tips.",
-          },
-          // Legacy fields for backward compatibility
-          score: {
-            type: Type.INTEGER,
-            description: "Legacy overall score (same as overall_score).",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "What they did well.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "Areas for improvement.",
-          },
-          personalizedTip: {
-            type: Type.STRING,
-            description: "Personalized tip.",
-          },
-          spokenResponse: {
-            type: Type.STRING,
-            description: "Spoken response.",
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description: "Communication profile analysis - REQUIRED FIELD.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description:
-                  'Communication style profile (e.g., "Concise Communicator", "Detail-Oriented", "Storyteller").',
-              },
-              strength: {
-                type: Type.STRING,
-                description: "Primary communication strength.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "Main area for improvement.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description: "Example improvement - REQUIRED FIELD.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description: "The user's original explanation.",
-              },
-              improved: {
-                type: Type.STRING,
-                description: "An improved version of their explanation.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description: "Why the improved version is better.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "score",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "personalizedTip",
-          "spokenResponse",
-          "communicationBehavior",
-          "exampleRewrite",
-        ],
           },
         },
       }),
@@ -1711,12 +1710,12 @@ Just your natural opening contribution to start the discussion. Be professional,
     // Format message history for context
     const historyText = messageHistory
       ? messageHistory
-          .slice(-6) // Last 6 messages for context
-          .map(
-            (msg) =>
-              `${msg.type === "user" ? "User" : msg.agentName}: ${msg.content}`,
-          )
-          .join("\n")
+        .slice(-6) // Last 6 messages for context
+        .map(
+          (msg) =>
+            `${msg.type === "user" ? "User" : msg.agentName}: ${msg.content}`,
+        )
+        .join("\n")
       : "";
 
     const systemInstruction = `You are ${respondingAgent.name}, a professional participant in a group discussion. You have the personality of a "${respondingAgent.personality}" - ${respondingAgent.description}.
@@ -1728,11 +1727,10 @@ ${userContribution ? `**User's Latest Contribution:** ${userContribution}` : "**
 ${historyText}
 
 **Your Task:**
-${
-  userContribution
-    ? "Respond with 1-2 sentences. Build on good points or offer helpful alternatives to weak ones."
-    : "Continue the discussion with 1-2 sentences. Be collaborative and constructive."
-}
+${userContribution
+        ? "Respond with 1-2 sentences. Build on good points or offer helpful alternatives to weak ones."
+        : "Continue the discussion with 1-2 sentences. Be collaborative and constructive."
+      }
 
 **Collaborative Style:**
 - Maximum 2 sentences
@@ -2070,70 +2068,70 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
         config: {
           temperature: 0.2,
           responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          messageNumber: {
-            type: Type.INTEGER,
-            description: "The message number being evaluated.",
-          },
-          messageContent: {
-            type: Type.STRING,
-            description: "The exact message content.",
-          },
-          scores: {
+          responseSchema: {
             type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 5 categories (0-20 each).",
             properties: {
-              logicReasoning: {
+              messageNumber: {
                 type: Type.INTEGER,
-                description: "Logic & Reasoning score (0-20).",
+                description: "The message number being evaluated.",
               },
-              evidenceQuality: {
-                type: Type.INTEGER,
-                description: "Evidence Quality score (0-20).",
+              messageContent: {
+                type: Type.STRING,
+                description: "The exact message content.",
               },
-              toneLanguage: {
-                type: Type.INTEGER,
-                description: "Tone & Language score (0-20).",
+              scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 5 categories (0-20 each).",
+                properties: {
+                  logicReasoning: {
+                    type: Type.INTEGER,
+                    description: "Logic & Reasoning score (0-20).",
+                  },
+                  evidenceQuality: {
+                    type: Type.INTEGER,
+                    description: "Evidence Quality score (0-20).",
+                  },
+                  toneLanguage: {
+                    type: Type.INTEGER,
+                    description: "Tone & Language score (0-20).",
+                  },
+                  opponentEngagement: {
+                    type: Type.INTEGER,
+                    description: "Opponent Engagement score (0-20).",
+                  },
+                  argumentStructure: {
+                    type: Type.INTEGER,
+                    description: "Argument Structure score (0-20).",
+                  },
+                },
+                required: [
+                  "logicReasoning",
+                  "evidenceQuality",
+                  "toneLanguage",
+                  "opponentEngagement",
+                  "argumentStructure",
+                ],
               },
-              opponentEngagement: {
+              overallPerformance: {
                 type: Type.INTEGER,
-                description: "Opponent Engagement score (0-20).",
+                description:
+                  "Overall performance score out of 100 for this individual message - separate from category scores.",
               },
-              argumentStructure: {
-                type: Type.INTEGER,
-                description: "Argument Structure score (0-20).",
+              critique: {
+                type: Type.STRING,
+                description:
+                  "BRIEF critique of this specific message - MAX 2 sentences.",
               },
             },
             required: [
-              "logicReasoning",
-              "evidenceQuality",
-              "toneLanguage",
-              "opponentEngagement",
-              "argumentStructure",
+              "messageNumber",
+              "messageContent",
+              "scores",
+              "overallPerformance",
+              "critique",
             ],
           },
-          overallPerformance: {
-            type: Type.INTEGER,
-            description:
-              "Overall performance score out of 100 for this individual message - separate from category scores.",
-          },
-          critique: {
-            type: Type.STRING,
-            description:
-              "BRIEF critique of this specific message - MAX 2 sentences.",
-          },
-        },
-        required: [
-          "messageNumber",
-          "messageContent",
-          "scores",
-          "overallPerformance",
-          "critique",
-        ],
-      },
         },
       }),
     { preferredModel: "gemini-2.5-flash", perAttemptTimeoutMs: 10000 },
@@ -2260,15 +2258,15 @@ export async function getEnhancedDebateEvaluation(
   const avgScores = {
     logicReasoning: Math.round(
       messageScores.reduce((sum, msg) => sum + msg.scores.logicReasoning, 0) /
-        messageScores.length,
+      messageScores.length,
     ),
     evidenceQuality: Math.round(
       messageScores.reduce((sum, msg) => sum + msg.scores.evidenceQuality, 0) /
-        messageScores.length,
+      messageScores.length,
     ),
     toneLanguage: Math.round(
       messageScores.reduce((sum, msg) => sum + msg.scores.toneLanguage, 0) /
-        messageScores.length,
+      messageScores.length,
     ),
     opponentEngagement: Math.round(
       messageScores.reduce(
@@ -2450,354 +2448,354 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
               role: {
                 type: Type.STRING,
                 description: "The coaching role used (Enhanced Debate Evaluation).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description:
-              "Overall debate score out of 100 based on world-class standards.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 5 categories (0-20 each).",
-            properties: {
-              logicReasoning: {
-                type: Type.INTEGER,
-                description: "Logic & Reasoning score (0-20).",
               },
-              evidenceQuality: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Evidence Quality score (0-20).",
+                description:
+                  "Overall debate score out of 100 based on world-class standards.",
               },
-              toneLanguage: {
-                type: Type.INTEGER,
-                description: "Tone & Language score (0-20).",
-              },
-              opponentEngagement: {
-                type: Type.INTEGER,
-                description: "Opponent Engagement score (0-20).",
-              },
-              argumentStructure: {
-                type: Type.INTEGER,
-                description: "Argument Structure score (0-20).",
-              },
-            },
-            required: [
-              "logicReasoning",
-              "evidenceQuality",
-              "toneLanguage",
-              "opponentEngagement",
-              "argumentStructure",
-            ],
-          },
-          messageBreakdown: {
-            type: Type.ARRAY,
-            description:
-              "Per-message scoring breakdown showing individual response analysis.",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                messageNumber: {
-                  type: Type.INTEGER,
-                  description: "Message number in the debate.",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 5 categories (0-20 each).",
+                properties: {
+                  logicReasoning: {
+                    type: Type.INTEGER,
+                    description: "Logic & Reasoning score (0-20).",
+                  },
+                  evidenceQuality: {
+                    type: Type.INTEGER,
+                    description: "Evidence Quality score (0-20).",
+                  },
+                  toneLanguage: {
+                    type: Type.INTEGER,
+                    description: "Tone & Language score (0-20).",
+                  },
+                  opponentEngagement: {
+                    type: Type.INTEGER,
+                    description: "Opponent Engagement score (0-20).",
+                  },
+                  argumentStructure: {
+                    type: Type.INTEGER,
+                    description: "Argument Structure score (0-20).",
+                  },
                 },
-                messageContent: {
-                  type: Type.STRING,
-                  description: "The exact message content.",
-                },
-                scores: {
+                required: [
+                  "logicReasoning",
+                  "evidenceQuality",
+                  "toneLanguage",
+                  "opponentEngagement",
+                  "argumentStructure",
+                ],
+              },
+              messageBreakdown: {
+                type: Type.ARRAY,
+                description:
+                  "Per-message scoring breakdown showing individual response analysis.",
+                items: {
                   type: Type.OBJECT,
-                  description:
-                    "Individual scores for this message (0-20 each).",
                   properties: {
-                    logicReasoning: {
+                    messageNumber: {
                       type: Type.INTEGER,
-                      description: "Logic & Reasoning score (0-20).",
+                      description: "Message number in the debate.",
                     },
-                    evidenceQuality: {
-                      type: Type.INTEGER,
-                      description: "Evidence Quality score (0-20).",
+                    messageContent: {
+                      type: Type.STRING,
+                      description: "The exact message content.",
                     },
-                    toneLanguage: {
-                      type: Type.INTEGER,
-                      description: "Tone & Language score (0-20).",
+                    scores: {
+                      type: Type.OBJECT,
+                      description:
+                        "Individual scores for this message (0-20 each).",
+                      properties: {
+                        logicReasoning: {
+                          type: Type.INTEGER,
+                          description: "Logic & Reasoning score (0-20).",
+                        },
+                        evidenceQuality: {
+                          type: Type.INTEGER,
+                          description: "Evidence Quality score (0-20).",
+                        },
+                        toneLanguage: {
+                          type: Type.INTEGER,
+                          description: "Tone & Language score (0-20).",
+                        },
+                        opponentEngagement: {
+                          type: Type.INTEGER,
+                          description: "Opponent Engagement score (0-20).",
+                        },
+                        argumentStructure: {
+                          type: Type.INTEGER,
+                          description: "Argument Structure score (0-20).",
+                        },
+                      },
+                      required: [
+                        "logicReasoning",
+                        "evidenceQuality",
+                        "toneLanguage",
+                        "opponentEngagement",
+                        "argumentStructure",
+                      ],
                     },
-                    opponentEngagement: {
+                    totalScore: {
                       type: Type.INTEGER,
-                      description: "Opponent Engagement score (0-20).",
+                      description:
+                        "Total score for this individual message (0-100).",
                     },
-                    argumentStructure: {
-                      type: Type.INTEGER,
-                      description: "Argument Structure score (0-20).",
+                    critique: {
+                      type: Type.STRING,
+                      description: "Brief critique of this specific message.",
                     },
                   },
                   required: [
-                    "logicReasoning",
-                    "evidenceQuality",
-                    "toneLanguage",
-                    "opponentEngagement",
-                    "argumentStructure",
+                    "messageNumber",
+                    "messageContent",
+                    "scores",
+                    "totalScore",
+                    "critique",
                   ],
                 },
-                totalScore: {
-                  type: Type.INTEGER,
-                  description:
-                    "Total score for this individual message (0-100).",
-                },
-                critique: {
-                  type: Type.STRING,
-                  description: "Brief critique of this specific message.",
-                },
               },
-              required: [
-                "messageNumber",
-                "messageContent",
-                "scores",
-                "totalScore",
-                "critique",
-              ],
-            },
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "BRIEF feedback analyzing debate performance - MAX 2 sentences.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
-          },
-          // Legacy fields for backward compatibility
-          score: {
-            type: Type.INTEGER,
-            description: "Legacy overall score (same as overall_score).",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "BRIEF strengths - MAX 1 sentence.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "BRIEF improvement areas - MAX 1 sentence.",
-          },
-          personalizedTip: {
-            type: Type.STRING,
-            description: "SHORT personalized tip - MAX 1 sentence.",
-          },
-          spokenResponse: {
-            type: Type.STRING,
-            description: "BRIEF spoken summary - MAX 1 sentence.",
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description:
-              "Communication profile analysis based on debate performance.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "BRIEF debate profile - MAX 3 words.",
-              },
-              strength: {
-                type: Type.STRING,
-                description: "BRIEF key strength - MAX 1 sentence.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "BRIEF growth area - MAX 1 sentence.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          debateAnalysis: {
-            type: Type.OBJECT,
-            description:
-              "Detailed analysis of the debate performance against world-class standards.",
-            properties: {
-              strongestArgument: {
-                type: Type.STRING,
-                description: "BRIEF strongest argument - MAX 1 sentence.",
-              },
-              weakestArgument: {
-                type: Type.STRING,
-                description: "BRIEF weakest argument - MAX 1 sentence.",
-              },
-              bestRebuttal: {
-                type: Type.STRING,
-                description: "BRIEF best rebuttal - MAX 1 sentence.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description: "BRIEF missed opportunities - MAX 1 sentence.",
-              },
-              improvementOverTime: {
-                type: Type.STRING,
-                description: "BRIEF improvement over time - MAX 1 sentence.",
-              },
-              logicalConsistency: {
-                type: Type.STRING,
-                description: "BRIEF logical consistency - MAX 1 sentence.",
-              },
-              evidenceEffectiveness: {
-                type: Type.STRING,
-                description: "BRIEF evidence effectiveness - MAX 1 sentence.",
-              },
-              rhetoricalSophistication: {
+              feedback: {
                 type: Type.STRING,
                 description:
-                  "BRIEF rhetorical sophistication - MAX 1 sentence.",
+                  "BRIEF feedback analyzing debate performance - MAX 2 sentences.",
               },
-              logicalFallacies: {
-                type: Type.STRING,
-                description: "BRIEF logical fallacies - MAX 1 sentence.",
-              },
-              argumentativePatterns: {
-                type: Type.STRING,
-                description: "BRIEF argumentative patterns - MAX 1 sentence.",
-              },
-              emotionalIntelligence: {
-                type: Type.STRING,
-                description: "BRIEF emotional intelligence - MAX 1 sentence.",
-              },
-              crossExaminationSkills: {
-                type: Type.STRING,
-                description: "BRIEF cross-examination skills - MAX 1 sentence.",
-              },
-              argumentativeStamina: {
-                type: Type.STRING,
-                description: "BRIEF argumentative stamina - MAX 1 sentence.",
-              },
-              timeManagement: {
-                type: Type.STRING,
-                description: "BRIEF time management - MAX 1 sentence.",
-              },
-              adaptability: {
-                type: Type.STRING,
-                description: "BRIEF adaptability - MAX 1 sentence.",
-              },
-              closingImpact: {
-                type: Type.STRING,
-                description: "BRIEF closing impact - MAX 1 sentence.",
-              },
-            },
-            required: [
-              "strongestArgument",
-              "weakestArgument",
-              "bestRebuttal",
-              "missedOpportunities",
-              "improvementOverTime",
-              "logicalConsistency",
-              "evidenceEffectiveness",
-              "rhetoricalSophistication",
-              "logicalFallacies",
-              "argumentativePatterns",
-              "emotionalIntelligence",
-              "crossExaminationSkills",
-              "argumentativeStamina",
-              "timeManagement",
-              "adaptability",
-              "closingImpact",
-            ],
-          },
-          worldClassComparison: {
-            type: Type.OBJECT,
-            description:
-              "Comparison to world-class debate standards and recommendations.",
-            properties: {
-              currentLevel: {
-                type: Type.STRING,
-                description: "BRIEF skill level - MAX 1 sentence.",
-              },
-              championshipGap: {
-                type: Type.STRING,
-                description: "BRIEF championship gap - MAX 1 sentence.",
-              },
-              nextMilestone: {
-                type: Type.STRING,
-                description: "BRIEF next milestone - MAX 1 sentence.",
-              },
-              trainingFocus: {
-                type: Type.STRING,
-                description: "BRIEF training focus - MAX 1 sentence.",
-              },
-            },
-            required: [
-              "currentLevel",
-              "championshipGap",
-              "nextMilestone",
-              "trainingFocus",
-            ],
-          },
-          performanceInsights: {
-            type: Type.OBJECT,
-            description:
-              "Advanced performance insights and strategic analysis.",
-            properties: {
-              debateStyle: {
-                type: Type.STRING,
-                description: "BRIEF debate style - MAX 1 sentence.",
-              },
-              strengthAreas: {
+              tips: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING },
-                description: "3 SHORT strength areas - each MAX 3 words.",
+                description:
+                  "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
               },
-              improvementAreas: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "3 SHORT improvement areas - each MAX 3 words.",
+              // Legacy fields for backward compatibility
+              score: {
+                type: Type.INTEGER,
+                description: "Legacy overall score (same as overall_score).",
               },
-              strategicMoves: {
+              whatYouDidWell: {
                 type: Type.STRING,
-                description: "BRIEF strategic moves - MAX 1 sentence.",
+                description: "BRIEF strengths - MAX 1 sentence.",
               },
-              tacticalErrors: {
+              areasForImprovement: {
                 type: Type.STRING,
-                description: "BRIEF tactical errors - MAX 1 sentence.",
+                description: "BRIEF improvement areas - MAX 1 sentence.",
               },
-              opponentExploitation: {
+              personalizedTip: {
                 type: Type.STRING,
-                description: "BRIEF opponent exploitation - MAX 1 sentence.",
+                description: "SHORT personalized tip - MAX 1 sentence.",
               },
-              pressureHandling: {
+              spokenResponse: {
                 type: Type.STRING,
-                description: "BRIEF pressure handling - MAX 1 sentence.",
+                description: "BRIEF spoken summary - MAX 1 sentence.",
               },
-              comebackAbility: {
-                type: Type.STRING,
-                description: "BRIEF comeback ability - MAX 1 sentence.",
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description:
+                  "Communication profile analysis based on debate performance.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "BRIEF debate profile - MAX 3 words.",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "BRIEF key strength - MAX 1 sentence.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "BRIEF growth area - MAX 1 sentence.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              debateAnalysis: {
+                type: Type.OBJECT,
+                description:
+                  "Detailed analysis of the debate performance against world-class standards.",
+                properties: {
+                  strongestArgument: {
+                    type: Type.STRING,
+                    description: "BRIEF strongest argument - MAX 1 sentence.",
+                  },
+                  weakestArgument: {
+                    type: Type.STRING,
+                    description: "BRIEF weakest argument - MAX 1 sentence.",
+                  },
+                  bestRebuttal: {
+                    type: Type.STRING,
+                    description: "BRIEF best rebuttal - MAX 1 sentence.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description: "BRIEF missed opportunities - MAX 1 sentence.",
+                  },
+                  improvementOverTime: {
+                    type: Type.STRING,
+                    description: "BRIEF improvement over time - MAX 1 sentence.",
+                  },
+                  logicalConsistency: {
+                    type: Type.STRING,
+                    description: "BRIEF logical consistency - MAX 1 sentence.",
+                  },
+                  evidenceEffectiveness: {
+                    type: Type.STRING,
+                    description: "BRIEF evidence effectiveness - MAX 1 sentence.",
+                  },
+                  rhetoricalSophistication: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF rhetorical sophistication - MAX 1 sentence.",
+                  },
+                  logicalFallacies: {
+                    type: Type.STRING,
+                    description: "BRIEF logical fallacies - MAX 1 sentence.",
+                  },
+                  argumentativePatterns: {
+                    type: Type.STRING,
+                    description: "BRIEF argumentative patterns - MAX 1 sentence.",
+                  },
+                  emotionalIntelligence: {
+                    type: Type.STRING,
+                    description: "BRIEF emotional intelligence - MAX 1 sentence.",
+                  },
+                  crossExaminationSkills: {
+                    type: Type.STRING,
+                    description: "BRIEF cross-examination skills - MAX 1 sentence.",
+                  },
+                  argumentativeStamina: {
+                    type: Type.STRING,
+                    description: "BRIEF argumentative stamina - MAX 1 sentence.",
+                  },
+                  timeManagement: {
+                    type: Type.STRING,
+                    description: "BRIEF time management - MAX 1 sentence.",
+                  },
+                  adaptability: {
+                    type: Type.STRING,
+                    description: "BRIEF adaptability - MAX 1 sentence.",
+                  },
+                  closingImpact: {
+                    type: Type.STRING,
+                    description: "BRIEF closing impact - MAX 1 sentence.",
+                  },
+                },
+                required: [
+                  "strongestArgument",
+                  "weakestArgument",
+                  "bestRebuttal",
+                  "missedOpportunities",
+                  "improvementOverTime",
+                  "logicalConsistency",
+                  "evidenceEffectiveness",
+                  "rhetoricalSophistication",
+                  "logicalFallacies",
+                  "argumentativePatterns",
+                  "emotionalIntelligence",
+                  "crossExaminationSkills",
+                  "argumentativeStamina",
+                  "timeManagement",
+                  "adaptability",
+                  "closingImpact",
+                ],
+              },
+              worldClassComparison: {
+                type: Type.OBJECT,
+                description:
+                  "Comparison to world-class debate standards and recommendations.",
+                properties: {
+                  currentLevel: {
+                    type: Type.STRING,
+                    description: "BRIEF skill level - MAX 1 sentence.",
+                  },
+                  championshipGap: {
+                    type: Type.STRING,
+                    description: "BRIEF championship gap - MAX 1 sentence.",
+                  },
+                  nextMilestone: {
+                    type: Type.STRING,
+                    description: "BRIEF next milestone - MAX 1 sentence.",
+                  },
+                  trainingFocus: {
+                    type: Type.STRING,
+                    description: "BRIEF training focus - MAX 1 sentence.",
+                  },
+                },
+                required: [
+                  "currentLevel",
+                  "championshipGap",
+                  "nextMilestone",
+                  "trainingFocus",
+                ],
+              },
+              performanceInsights: {
+                type: Type.OBJECT,
+                description:
+                  "Advanced performance insights and strategic analysis.",
+                properties: {
+                  debateStyle: {
+                    type: Type.STRING,
+                    description: "BRIEF debate style - MAX 1 sentence.",
+                  },
+                  strengthAreas: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: "3 SHORT strength areas - each MAX 3 words.",
+                  },
+                  improvementAreas: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: "3 SHORT improvement areas - each MAX 3 words.",
+                  },
+                  strategicMoves: {
+                    type: Type.STRING,
+                    description: "BRIEF strategic moves - MAX 1 sentence.",
+                  },
+                  tacticalErrors: {
+                    type: Type.STRING,
+                    description: "BRIEF tactical errors - MAX 1 sentence.",
+                  },
+                  opponentExploitation: {
+                    type: Type.STRING,
+                    description: "BRIEF opponent exploitation - MAX 1 sentence.",
+                  },
+                  pressureHandling: {
+                    type: Type.STRING,
+                    description: "BRIEF pressure handling - MAX 1 sentence.",
+                  },
+                  comebackAbility: {
+                    type: Type.STRING,
+                    description: "BRIEF comeback ability - MAX 1 sentence.",
+                  },
+                },
+                required: [
+                  "debateStyle",
+                  "strengthAreas",
+                  "improvementAreas",
+                  "strategicMoves",
+                  "tacticalErrors",
+                  "opponentExploitation",
+                  "pressureHandling",
+                  "comebackAbility",
+                ],
               },
             },
             required: [
-              "debateStyle",
-              "strengthAreas",
-              "improvementAreas",
-              "strategicMoves",
-              "tacticalErrors",
-              "opponentExploitation",
-              "pressureHandling",
-              "comebackAbility",
+              "role",
+              "overall_score",
+              "category_scores",
+              "messageBreakdown",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "debateAnalysis",
+              "worldClassComparison",
+              "performanceInsights",
             ],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "messageBreakdown",
-          "feedback",
-          "tips",
-          "score",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "personalizedTip",
-          "spokenResponse",
-          "communicationBehavior",
-          "debateAnalysis",
-          "worldClassComparison",
-          "performanceInsights",
-        ],
           },
         },
       }),
@@ -3000,180 +2998,180 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
               role: {
                 type: Type.STRING,
                 description: "The coaching role used (Group Discussion).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description:
-              "Overall group discussion score out of 100 - INDEPENDENT evaluation of complete discussion performance, NOT calculated from category scores.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 categories (0-20 each).",
-            properties: {
-              participation: {
-                type: Type.INTEGER,
-                description: "Participation & Engagement score (0-20).",
               },
-              communication: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Communication Clarity score (0-20).",
+                description:
+                  "Overall group discussion score out of 100 - INDEPENDENT evaluation of complete discussion performance, NOT calculated from category scores.",
               },
-              leadership: {
-                type: Type.INTEGER,
-                description: "Leadership & Initiative score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 categories (0-20 each).",
+                properties: {
+                  participation: {
+                    type: Type.INTEGER,
+                    description: "Participation & Engagement score (0-20).",
+                  },
+                  communication: {
+                    type: Type.INTEGER,
+                    description: "Communication Clarity score (0-20).",
+                  },
+                  leadership: {
+                    type: Type.INTEGER,
+                    description: "Leadership & Initiative score (0-20).",
+                  },
+                  listening: {
+                    type: Type.INTEGER,
+                    description: "Active Listening score (0-20).",
+                  },
+                  collaboration: {
+                    type: Type.INTEGER,
+                    description: "Collaboration Skills score (0-20).",
+                  },
+                  criticalThinking: {
+                    type: Type.INTEGER,
+                    description: "Critical Thinking score (0-20).",
+                  },
+                },
+                required: [
+                  "participation",
+                  "communication",
+                  "leadership",
+                  "listening",
+                  "collaboration",
+                  "criticalThinking",
+                ],
               },
-              listening: {
-                type: Type.INTEGER,
-                description: "Active Listening score (0-20).",
+              feedback: {
+                type: Type.STRING,
+                description:
+                  "Comprehensive feedback analyzing professional group discussion performance, noting how well they engaged with challenging AI agents and handled professional discourse.",
               },
-              collaboration: {
-                type: Type.INTEGER,
-                description: "Collaboration Skills score (0-20).",
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description:
+                  "5-7 specific improvement tips for professional group discussions, focusing on how to better engage with challenging participants and strengthen arguments.",
               },
-              criticalThinking: {
+              // Legacy fields for backward compatibility
+              score: {
                 type: Type.INTEGER,
-                description: "Critical Thinking score (0-20).",
+                description: "Legacy overall score (same as overall_score).",
+              },
+              whatYouDidWell: {
+                type: Type.STRING,
+                description:
+                  "Specific professional strengths demonstrated when engaging with challenging AI participants.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description:
+                  "Specific areas for improvement in professional discussions, especially when facing tough questions or challenges.",
+              },
+              personalizedTip: {
+                type: Type.STRING,
+                description: "SHORT personalized tip - MAX 1 sentence.",
+              },
+              spokenResponse: {
+                type: Type.STRING,
+                description: "BRIEF spoken summary - MAX 1 sentence.",
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description:
+                  "Communication profile analysis based on group discussion performance.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "Group discussion style profile (2-4 words).",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description:
+                      "Key strength demonstrated in the group discussion.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "BRIEF growth area - MAX 1 sentence.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description:
+                  "Example improvement of a specific contribution from the discussion.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "Original contribution from the discussion.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "Improved version of the contribution.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description: "Reasoning for the improvement.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
+              },
+              groupDiscussionAnalysis: {
+                type: Type.OBJECT,
+                description:
+                  "Detailed analysis of professional group discussion performance.",
+                properties: {
+                  strongestContribution: {
+                    type: Type.STRING,
+                    description:
+                      "The user's strongest professional contribution to the discussion.",
+                  },
+                  weakestContribution: {
+                    type: Type.STRING,
+                    description:
+                      "The user's weakest contribution, especially when challenged by AI agents.",
+                  },
+                  bestInteraction: {
+                    type: Type.STRING,
+                    description:
+                      "The user's best professional interaction with challenging AI participants.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description:
+                      "Key opportunities missed to strengthen arguments or challenge weak points.",
+                  },
+                  groupDynamics: {
+                    type: Type.STRING,
+                    description: "How the user handled professional discourse and challenging feedback.",
+                  },
+                },
+                required: [
+                  "strongestContribution",
+                  "weakestContribution",
+                  "bestInteraction",
+                  "missedOpportunities",
+                  "groupDynamics",
+                ],
               },
             },
             required: [
-              "participation",
-              "communication",
-              "leadership",
-              "listening",
-              "collaboration",
-              "criticalThinking",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "score",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "personalizedTip",
+              "spokenResponse",
+              "communicationBehavior",
+              "exampleRewrite",
+              "groupDiscussionAnalysis",
             ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "Comprehensive feedback analyzing professional group discussion performance, noting how well they engaged with challenging AI agents and handled professional discourse.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "5-7 specific improvement tips for professional group discussions, focusing on how to better engage with challenging participants and strengthen arguments.",
-          },
-          // Legacy fields for backward compatibility
-          score: {
-            type: Type.INTEGER,
-            description: "Legacy overall score (same as overall_score).",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description:
-              "Specific professional strengths demonstrated when engaging with challenging AI participants.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description:
-              "Specific areas for improvement in professional discussions, especially when facing tough questions or challenges.",
-          },
-          personalizedTip: {
-            type: Type.STRING,
-            description: "SHORT personalized tip - MAX 1 sentence.",
-          },
-          spokenResponse: {
-            type: Type.STRING,
-            description: "BRIEF spoken summary - MAX 1 sentence.",
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description:
-              "Communication profile analysis based on group discussion performance.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "Group discussion style profile (2-4 words).",
-              },
-              strength: {
-                type: Type.STRING,
-                description:
-                  "Key strength demonstrated in the group discussion.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "BRIEF growth area - MAX 1 sentence.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description:
-              "Example improvement of a specific contribution from the discussion.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description: "Original contribution from the discussion.",
-              },
-              improved: {
-                type: Type.STRING,
-                description: "Improved version of the contribution.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description: "Reasoning for the improvement.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-          groupDiscussionAnalysis: {
-            type: Type.OBJECT,
-            description:
-              "Detailed analysis of professional group discussion performance.",
-            properties: {
-              strongestContribution: {
-                type: Type.STRING,
-                description:
-                  "The user's strongest professional contribution to the discussion.",
-              },
-              weakestContribution: {
-                type: Type.STRING,
-                description:
-                  "The user's weakest contribution, especially when challenged by AI agents.",
-              },
-              bestInteraction: {
-                type: Type.STRING,
-                description:
-                  "The user's best professional interaction with challenging AI participants.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description:
-                  "Key opportunities missed to strengthen arguments or challenge weak points.",
-              },
-              groupDynamics: {
-                type: Type.STRING,
-                description: "How the user handled professional discourse and challenging feedback.",
-              },
-            },
-            required: [
-              "strongestContribution",
-              "weakestContribution",
-              "bestInteraction",
-              "missedOpportunities",
-              "groupDynamics",
-            ],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "score",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "personalizedTip",
-          "spokenResponse",
-          "communicationBehavior",
-          "exampleRewrite",
-          "groupDiscussionAnalysis",
-        ],
           },
         },
       }),
@@ -3181,23 +3179,23 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
   );
 
   const result = JSON.parse(response.text);
-  
+
   // CRITICAL: Validate and correct overall score based on category scores
   const categoryScores = result.category_scores;
   const categoryTotal = Object.values(categoryScores).reduce((sum: number, score: any) => sum + Number(score), 0) as number;
   const categoryAverage = Math.round((categoryTotal as number) / 6); // 6 categories
-  
+
   // Calculate realistic overall score based on category performance
   // Overall score should reflect actual performance, not be inflated
   const calculatedOverall = Math.round((categoryTotal / 120) * 100);
-  
+
   // If AI gave inflated score, correct it to match actual performance
   if (result.overall_score > calculatedOverall + 10) {
     console.warn(`⚠️ Correcting inflated overall score: ${result.overall_score} → ${calculatedOverall}`);
     result.overall_score = calculatedOverall;
     result.score = calculatedOverall;
   }
-  
+
   // If all categories are low (avg < 8), overall should be very low
   if (categoryAverage < 8 && result.overall_score > 30) {
     const correctedScore = Math.min(30, calculatedOverall);
@@ -3205,7 +3203,7 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
     result.overall_score = correctedScore;
     result.score = correctedScore;
   }
-  
+
   // If all categories are very low (avg < 4), overall should be 0-10
   if (categoryAverage < 4 && result.overall_score > 10) {
     const correctedScore = Math.min(10, calculatedOverall);
@@ -3213,14 +3211,14 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
     result.overall_score = correctedScore;
     result.score = correctedScore;
   }
-  
+
   // If category total is less than 20 (out of 120), cap at 15 overall
   if ((categoryTotal as number) < 20 && result.overall_score > 15) {
     console.warn(`⚠️ Correcting score for minimal contribution: ${result.overall_score} → 15`);
     result.overall_score = 15;
     result.score = 15;
   }
-  
+
   console.log("✅ Group discussion evaluation generated with validated scoring", {
     categoryAverage,
     categoryTotal,
@@ -3857,160 +3855,160 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
                 type: Type.STRING,
                 description:
                   "The coaching role used (Enhanced Teacher Evaluation).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description: "Overall teaching score out of 100 - INDEPENDENT evaluation of complete teaching effectiveness, NOT calculated from category scores.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 categories (0-20 each).",
-            properties: {
-              clarity: {
-                type: Type.INTEGER,
-                description: "Clarity & Explanation score (0-20).",
               },
-              structure: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Structure & Organization score (0-20).",
+                description: "Overall teaching score out of 100 - INDEPENDENT evaluation of complete teaching effectiveness, NOT calculated from category scores.",
               },
-              engagement: {
-                type: Type.INTEGER,
-                description: "Engagement & Interest score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 categories (0-20 each).",
+                properties: {
+                  clarity: {
+                    type: Type.INTEGER,
+                    description: "Clarity & Explanation score (0-20).",
+                  },
+                  structure: {
+                    type: Type.INTEGER,
+                    description: "Structure & Organization score (0-20).",
+                  },
+                  engagement: {
+                    type: Type.INTEGER,
+                    description: "Engagement & Interest score (0-20).",
+                  },
+                  educationalValue: {
+                    type: Type.INTEGER,
+                    description: "Educational Value score (0-20).",
+                  },
+                  accessibility: {
+                    type: Type.INTEGER,
+                    description: "Accessibility & Adaptability score (0-20).",
+                  },
+                  completeness: {
+                    type: Type.INTEGER,
+                    description: "Completeness & Depth score (0-20).",
+                  },
+                },
+                required: [
+                  "clarity",
+                  "structure",
+                  "engagement",
+                  "educationalValue",
+                  "accessibility",
+                  "completeness",
+                ],
               },
-              educationalValue: {
-                type: Type.INTEGER,
-                description: "Educational Value score (0-20).",
+              feedback: {
+                type: Type.STRING,
+                description:
+                  "BRIEF feedback analyzing teaching performance - MAX 2 sentences.",
               },
-              accessibility: {
-                type: Type.INTEGER,
-                description: "Accessibility & Adaptability score (0-20).",
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description:
+                  "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
               },
-              completeness: {
-                type: Type.INTEGER,
-                description: "Completeness & Depth score (0-20).",
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "BRIEF strengths - MAX 1 sentence.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "BRIEF improvement areas - MAX 1 sentence.",
+              },
+              teachingAnalysis: {
+                type: Type.OBJECT,
+                description: "Detailed analysis of the teaching performance.",
+                properties: {
+                  strongestMoment: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF strongest teaching moment - MAX 1 sentence.",
+                  },
+                  weakestMoment: {
+                    type: Type.STRING,
+                    description: "BRIEF weakest teaching moment - MAX 1 sentence.",
+                  },
+                  bestExplanation: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF best explanation technique - MAX 1 sentence.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description: "BRIEF missed opportunities - MAX 1 sentence.",
+                  },
+                  audienceAdaptation: {
+                    type: Type.STRING,
+                    description: "BRIEF audience adaptation - MAX 1 sentence.",
+                  },
+                },
+                required: [
+                  "strongestMoment",
+                  "weakestMoment",
+                  "bestExplanation",
+                  "missedOpportunities",
+                  "audienceAdaptation",
+                ],
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description:
+                  "Communication profile analysis based on teaching performance.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "BRIEF teaching profile - MAX 3 words.",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "BRIEF key strength - MAX 1 sentence.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "BRIEF growth area - MAX 1 sentence.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description:
+                  "Example teaching improvement with before/after comparison.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF original teaching excerpt - MAX 2 sentences.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF improved teaching version - MAX 2 sentences.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF explanation of improvement - MAX 1 sentence.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
               },
             },
             required: [
-              "clarity",
-              "structure",
-              "engagement",
-              "educationalValue",
-              "accessibility",
-              "completeness",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "teachingAnalysis",
+              "communicationBehavior",
+              "exampleRewrite",
             ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "BRIEF feedback analyzing teaching performance - MAX 2 sentences.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "BRIEF strengths - MAX 1 sentence.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "BRIEF improvement areas - MAX 1 sentence.",
-          },
-          teachingAnalysis: {
-            type: Type.OBJECT,
-            description: "Detailed analysis of the teaching performance.",
-            properties: {
-              strongestMoment: {
-                type: Type.STRING,
-                description:
-                  "BRIEF strongest teaching moment - MAX 1 sentence.",
-              },
-              weakestMoment: {
-                type: Type.STRING,
-                description: "BRIEF weakest teaching moment - MAX 1 sentence.",
-              },
-              bestExplanation: {
-                type: Type.STRING,
-                description:
-                  "BRIEF best explanation technique - MAX 1 sentence.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description: "BRIEF missed opportunities - MAX 1 sentence.",
-              },
-              audienceAdaptation: {
-                type: Type.STRING,
-                description: "BRIEF audience adaptation - MAX 1 sentence.",
-              },
-            },
-            required: [
-              "strongestMoment",
-              "weakestMoment",
-              "bestExplanation",
-              "missedOpportunities",
-              "audienceAdaptation",
-            ],
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description:
-              "Communication profile analysis based on teaching performance.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "BRIEF teaching profile - MAX 3 words.",
-              },
-              strength: {
-                type: Type.STRING,
-                description: "BRIEF key strength - MAX 1 sentence.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "BRIEF growth area - MAX 1 sentence.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description:
-              "Example teaching improvement with before/after comparison.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description:
-                  "BRIEF original teaching excerpt - MAX 2 sentences.",
-              },
-              improved: {
-                type: Type.STRING,
-                description:
-                  "BRIEF improved teaching version - MAX 2 sentences.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description:
-                  "BRIEF explanation of improvement - MAX 1 sentence.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "teachingAnalysis",
-          "communicationBehavior",
-          "exampleRewrite",
-        ],
           },
         },
       }),
@@ -4124,159 +4122,159 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
                 type: Type.STRING,
                 description:
                   "The coaching role used (Enhanced Storyteller Evaluation).",
-          },
-          overall_score: {
-            type: Type.INTEGER,
-            description: "Overall storytelling score out of 100.",
-          },
-          category_scores: {
-            type: Type.OBJECT,
-            description:
-              "Individual scores for each of the 6 categories (0-20 each).",
-            properties: {
-              narrativeStructure: {
-                type: Type.INTEGER,
-                description: "Narrative Structure score (0-20).",
               },
-              characterDevelopment: {
+              overall_score: {
                 type: Type.INTEGER,
-                description: "Character Development score (0-20).",
+                description: "Overall storytelling score out of 100.",
               },
-              descriptiveLanguage: {
-                type: Type.INTEGER,
-                description: "Descriptive Language score (0-20).",
+              category_scores: {
+                type: Type.OBJECT,
+                description:
+                  "Individual scores for each of the 6 categories (0-20 each).",
+                properties: {
+                  narrativeStructure: {
+                    type: Type.INTEGER,
+                    description: "Narrative Structure score (0-20).",
+                  },
+                  characterDevelopment: {
+                    type: Type.INTEGER,
+                    description: "Character Development score (0-20).",
+                  },
+                  descriptiveLanguage: {
+                    type: Type.INTEGER,
+                    description: "Descriptive Language score (0-20).",
+                  },
+                  emotionalImpact: {
+                    type: Type.INTEGER,
+                    description: "Emotional Impact score (0-20).",
+                  },
+                  creativity: {
+                    type: Type.INTEGER,
+                    description: "Creativity & Originality score (0-20).",
+                  },
+                  engagement: {
+                    type: Type.INTEGER,
+                    description: "Engagement & Pacing score (0-20).",
+                  },
+                },
+                required: [
+                  "narrativeStructure",
+                  "characterDevelopment",
+                  "descriptiveLanguage",
+                  "emotionalImpact",
+                  "creativity",
+                  "engagement",
+                ],
               },
-              emotionalImpact: {
-                type: Type.INTEGER,
-                description: "Emotional Impact score (0-20).",
+              feedback: {
+                type: Type.STRING,
+                description:
+                  "BRIEF feedback analyzing storytelling performance - MAX 2 sentences.",
               },
-              creativity: {
-                type: Type.INTEGER,
-                description: "Creativity & Originality score (0-20).",
+              tips: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description:
+                  "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
               },
-              engagement: {
-                type: Type.INTEGER,
-                description: "Engagement & Pacing score (0-20).",
+              whatYouDidWell: {
+                type: Type.STRING,
+                description: "BRIEF strengths - MAX 1 sentence.",
+              },
+              areasForImprovement: {
+                type: Type.STRING,
+                description: "BRIEF improvement areas - MAX 1 sentence.",
+              },
+              storytellingAnalysis: {
+                type: Type.OBJECT,
+                description: "Detailed analysis of the storytelling performance.",
+                properties: {
+                  strongestMoment: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF strongest storytelling moment - MAX 1 sentence.",
+                  },
+                  weakestMoment: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF weakest storytelling moment - MAX 1 sentence.",
+                  },
+                  bestTechnique: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF best storytelling technique - MAX 1 sentence.",
+                  },
+                  missedOpportunities: {
+                    type: Type.STRING,
+                    description: "BRIEF missed opportunities - MAX 1 sentence.",
+                  },
+                  emotionalConnection: {
+                    type: Type.STRING,
+                    description: "BRIEF emotional connection - MAX 1 sentence.",
+                  },
+                },
+                required: [
+                  "strongestMoment",
+                  "weakestMoment",
+                  "bestTechnique",
+                  "missedOpportunities",
+                  "emotionalConnection",
+                ],
+              },
+              communicationBehavior: {
+                type: Type.OBJECT,
+                description:
+                  "Communication profile analysis based on storytelling performance.",
+                properties: {
+                  profile: {
+                    type: Type.STRING,
+                    description: "BRIEF storytelling profile - MAX 3 words.",
+                  },
+                  strength: {
+                    type: Type.STRING,
+                    description: "BRIEF key strength - MAX 1 sentence.",
+                  },
+                  growthArea: {
+                    type: Type.STRING,
+                    description: "BRIEF growth area - MAX 1 sentence.",
+                  },
+                },
+                required: ["profile", "strength", "growthArea"],
+              },
+              exampleRewrite: {
+                type: Type.OBJECT,
+                description:
+                  "Example storytelling improvement with before/after comparison.",
+                properties: {
+                  original: {
+                    type: Type.STRING,
+                    description: "BRIEF original story excerpt - MAX 2 sentences.",
+                  },
+                  improved: {
+                    type: Type.STRING,
+                    description: "BRIEF improved story version - MAX 2 sentences.",
+                  },
+                  reasoning: {
+                    type: Type.STRING,
+                    description:
+                      "BRIEF explanation of improvement - MAX 1 sentence.",
+                  },
+                },
+                required: ["original", "improved", "reasoning"],
               },
             },
             required: [
-              "narrativeStructure",
-              "characterDevelopment",
-              "descriptiveLanguage",
-              "emotionalImpact",
-              "creativity",
-              "engagement",
+              "role",
+              "overall_score",
+              "category_scores",
+              "feedback",
+              "tips",
+              "whatYouDidWell",
+              "areasForImprovement",
+              "storytellingAnalysis",
+              "communicationBehavior",
+              "exampleRewrite",
             ],
-          },
-          feedback: {
-            type: Type.STRING,
-            description:
-              "BRIEF feedback analyzing storytelling performance - MAX 2 sentences.",
-          },
-          tips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "3-5 SHORT improvement tips - each tip MAX 1 sentence.",
-          },
-          whatYouDidWell: {
-            type: Type.STRING,
-            description: "BRIEF strengths - MAX 1 sentence.",
-          },
-          areasForImprovement: {
-            type: Type.STRING,
-            description: "BRIEF improvement areas - MAX 1 sentence.",
-          },
-          storytellingAnalysis: {
-            type: Type.OBJECT,
-            description: "Detailed analysis of the storytelling performance.",
-            properties: {
-              strongestMoment: {
-                type: Type.STRING,
-                description:
-                  "BRIEF strongest storytelling moment - MAX 1 sentence.",
-              },
-              weakestMoment: {
-                type: Type.STRING,
-                description:
-                  "BRIEF weakest storytelling moment - MAX 1 sentence.",
-              },
-              bestTechnique: {
-                type: Type.STRING,
-                description:
-                  "BRIEF best storytelling technique - MAX 1 sentence.",
-              },
-              missedOpportunities: {
-                type: Type.STRING,
-                description: "BRIEF missed opportunities - MAX 1 sentence.",
-              },
-              emotionalConnection: {
-                type: Type.STRING,
-                description: "BRIEF emotional connection - MAX 1 sentence.",
-              },
-            },
-            required: [
-              "strongestMoment",
-              "weakestMoment",
-              "bestTechnique",
-              "missedOpportunities",
-              "emotionalConnection",
-            ],
-          },
-          communicationBehavior: {
-            type: Type.OBJECT,
-            description:
-              "Communication profile analysis based on storytelling performance.",
-            properties: {
-              profile: {
-                type: Type.STRING,
-                description: "BRIEF storytelling profile - MAX 3 words.",
-              },
-              strength: {
-                type: Type.STRING,
-                description: "BRIEF key strength - MAX 1 sentence.",
-              },
-              growthArea: {
-                type: Type.STRING,
-                description: "BRIEF growth area - MAX 1 sentence.",
-              },
-            },
-            required: ["profile", "strength", "growthArea"],
-          },
-          exampleRewrite: {
-            type: Type.OBJECT,
-            description:
-              "Example storytelling improvement with before/after comparison.",
-            properties: {
-              original: {
-                type: Type.STRING,
-                description: "BRIEF original story excerpt - MAX 2 sentences.",
-              },
-              improved: {
-                type: Type.STRING,
-                description: "BRIEF improved story version - MAX 2 sentences.",
-              },
-              reasoning: {
-                type: Type.STRING,
-                description:
-                  "BRIEF explanation of improvement - MAX 1 sentence.",
-              },
-            },
-            required: ["original", "improved", "reasoning"],
-          },
-        },
-        required: [
-          "role",
-          "overall_score",
-          "category_scores",
-          "feedback",
-          "tips",
-          "whatYouDidWell",
-          "areasForImprovement",
-          "storytellingAnalysis",
-          "communicationBehavior",
-          "exampleRewrite",
-        ],
           },
         },
       }),

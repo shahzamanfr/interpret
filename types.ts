@@ -35,9 +35,12 @@ export interface TeachingAnalysis {
 export interface StorytellingAnalysis {
   strongestMoment: string;
   weakestMoment: string;
-  bestTechnique: string;
-  missedOpportunities: string;
-  emotionalConnection: string;
+  bestTechnique?: string;
+  missedOpportunities?: string;
+  emotionalConnection?: string;
+  sensoryDetails?: string;
+  conflictAnalysis?: string;
+  themeAndSubtext?: string;
 }
 
 export interface GroupDiscussionAnalysis {
@@ -73,6 +76,8 @@ export interface CategoryScores {
   characterDevelopment?: number;
   descriptiveLanguage?: number;
   emotionalImpact?: number;
+  showVsTell?: number;
+  conflictAndStakes?: number;
   // Group Discussion-specific categories
   participation?: number;
   communication?: number;
@@ -105,6 +110,7 @@ export interface Feedback {
   teachingAnalysis?: TeachingAnalysis;
   storytellingAnalysis?: StorytellingAnalysis;
   groupDiscussionAnalysis?: GroupDiscussionAnalysis;
+  messageBreakdown?: any[];
 }
 
 export interface ScoreHistory {

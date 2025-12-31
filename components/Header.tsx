@@ -7,45 +7,37 @@ const Header: React.FC = () => {
   return (
     <header className="w-full px-4 lg:px-8 mx-auto max-w-7xl">
       <div
-        className={`flex items-center justify-between py-5 border-b sticky top-0 z-30 backdrop-blur-md transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          theme === "dark"
-            ? "border-gray-800 bg-black/70"
-            : "border-gray-200 bg-white/70"
-        }`}
+        className={`flex items-center justify-between pt-6 pb-2 border-b sticky top-0 z-30 backdrop-blur-md transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${theme === "dark"
+          ? "border-gray-800 bg-black/70"
+          : "border-gray-200 bg-white/70"
+          }`}
       >
-        <div className="flex items-center space-x-3">
-          <svg
-            className={`w-6 h-6 ${
-              theme === "dark" ? "text-white" : "text-black"
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex flex-col items-start sm:flex-row sm:items-center gap-1.5 sm:gap-4 lg:gap-6">
+          <img
+            src="/logo.png"
+            alt="Interpret Logo"
+            className={`h-16 sm:h-20 w-auto object-contain transition-all duration-500 hover:scale-105 ${theme === "dark"
+              ? "invert hue-rotate-180 brightness-[1.1] shadow-[0_0_20px_rgba(255,255,255,0.05)]"
+              : "shadow-sm border border-gray-100"
+              }`}
+          />
+          <div
+            className={`hidden sm:block h-8 w-[1px] ${theme === "dark" ? "bg-gray-800" : "bg-gray-200"}`}
+          />
+          <p
+            className={`text-xs lg:text-sm font-normal ${theme === "dark" ? "text-gray-400" : "text-gray-600"
+              }`}
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-            />
-          </svg>
-          <h1
-            className={`text-xl font-bold tracking-wide ${
-              theme === "dark" ? "text-white" : "text-black"
-            }`}
-            style={{ fontFamily: '"Space Grotesk", system-ui, sans-serif' }}
-          >
-            Open Voice
-          </h1>
+            an AI system for understanding human communication.
+          </p>
         </div>
         {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
-          className={`rounded-full border px-3 py-2 text-xs sm:text-sm font-semibold hover:opacity-90 transition-colors duration-200 ${
-            theme === "dark"
-              ? "border-gray-600 bg-black text-white"
-              : "border-gray-300 bg-white text-black"
-          }`}
+          className={`rounded-full border px-3 py-2 text-xs sm:text-sm font-semibold hover:opacity-90 transition-colors duration-200 ${theme === "dark"
+            ? "border-gray-600 bg-black text-white"
+            : "border-gray-300 bg-white text-black"
+            }`}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
         >
           {theme === "dark" ? (
