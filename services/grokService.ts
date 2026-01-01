@@ -272,7 +272,7 @@ ${explanationStrategy ? `**Strategy Suggestion:** ${explanationStrategy}` : ""}
 Provide feedback in the following JSON format:
 {
   "role": "${coachMode}",
-  "overall_score": <number 0-100>,
+  "overall_score": <number 0-100, independent holistic judgment>,
   "category_scores": {
     "clarity": <0-20>,
     "vocabulary": <0-20>,
@@ -299,6 +299,7 @@ Provide feedback in the following JSON format:
   }
 }
 
+CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100 based on the whole performance. Do NOT derive overall_score mathematically from categories.
 Be honest and constructive. Score based on actual performance.`;
 
     const messages: GroqMessage[] = [
@@ -497,7 +498,7 @@ ${conversationText}
 Output ONLY this JSON structure (no markdown, no explanations):
 {
   "role": "Debater",
-  "overall_score": <sum of all 6 categories>,
+  "overall_score": <independent holistic score 0-100>,
   "category_scores": {
     "argumentStrength": <0-20>,
     "evidenceSupport": <0-20>,
@@ -515,7 +516,8 @@ Output ONLY this JSON structure (no markdown, no explanations):
   "spokenResponse": "<brief 1-sentence summary>"
 }
 
-CRITICAL: Start with { and end with }. No extra text.`;
+CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100 based on the whole performance. Do NOT sum or average category scores to get the overall_score.
+Start with { and end with }. No extra text.`;
 
     const messages: GroqMessage[] = [
         {
@@ -783,7 +785,7 @@ export async function getEnhancedDebateEvaluationWithGroq(
 Topic: ${debateTopic}
 User Stance: ${userStance}
 AI Stance: ${aiStance}
-Overall Score: ${overallScore}/100
+Overall Performance Estimate: ${overallScore}/100
 Patterns: ${patterns}
 
 Message Breakdown:
@@ -792,11 +794,17 @@ ${messageScores.map(m => `Msg ${m.messageNumber}: ${m.overallPerformance}/100 - 
 Respond ONLY with valid JSON:
 {
   "role": "Debater",
-  "overall_score": ${overallScore},
-  "category_scores": ${JSON.stringify(avgScores)},
+  "overall_score": <independent holistic score 0-100 reflecting entire debate>,
+  "category_scores": {
+    "logicReasoning": <average performance 0-20>,
+    "evidenceQuality": <average performance 0-20>,
+    "toneLanguage": <average performance 0-20>,
+    "opponentEngagement": <average performance 0-20>,
+    "argumentStructure": <average performance 0-20>
+  },
   "feedback": "<comprehensive analysis of the entire debate>",
   "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-  "score": ${overallScore},
+  "score": <same as overall_score>,
   "whatYouDidWell": "<key strengths>",
   "areasForImprovement": "<key weaknesses>",
   "personalizedTip": "<number one priority>",
@@ -857,10 +865,8 @@ CRITICAL: Start with { and end with }. No extra text.`;
 
     try {
         const result = extractJson(finalResponse);
-        // Ensure calculated scores are preserved if LLM deviates
-        result.overall_score = overallScore;
-        result.score = overallScore;
-        result.category_scores = avgScores;
+        // Ensure legacy score property matches overall_score
+        result.score = result.overall_score;
         result.messageBreakdown = messageScores;
         return result;
     } catch (error) {
@@ -1004,11 +1010,18 @@ Critique: ${m.critique}`).join("\n\n")}
 Respond ONLY with valid JSON:
 {
   "role": "Group Discussion",
-  "overall_score": ${overallScore},
-  "category_scores": ${JSON.stringify(avgScores)},
+  "overall_score": <independent holistic score 0-100>,
+  "category_scores": {
+    "participation": <0-20>,
+    "communication": <0-20>,
+    "leadership": <0-20>,
+    "listening": <0-20>,
+    "collaboration": <0-20>,
+    "criticalThinking": <0-20>
+  },
   "feedback": "<comprehensive analysis>",
   "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-  "score": ${overallScore},
+  "score": <same as overall_score>,
   "whatYouDidWell": "<strengths>",
   "areasForImprovement": "<weaknesses>",
   "personalizedTip": "<priority tip>",
@@ -1030,7 +1043,9 @@ Respond ONLY with valid JSON:
     "missedOpportunities": "<analysis>",
     "groupDynamics": "<analysis>"
   }
-}`;
+}
+
+CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1042,18 +1057,8 @@ Respond ONLY with valid JSON:
     try {
         const result = extractJson(finalResponse);
 
-        // Correct inflated scores based on category average (Matching Gemini logic)
-        const categoryAverage = categoryTotal / 6;
-        let finalOverall = result.overall_score || overallScore;
-
-        if (finalOverall > overallScore + 10) finalOverall = overallScore;
-        if (categoryAverage < 8 && finalOverall > 30) finalOverall = Math.min(30, overallScore);
-        if (categoryAverage < 4 && finalOverall > 10) finalOverall = Math.min(10, overallScore);
-        if (categoryTotal < 20 && finalOverall > 15) finalOverall = 15;
-
-        result.overall_score = finalOverall;
-        result.score = finalOverall;
-        result.category_scores = avgScores;
+        // Ensure legacy score property matches overall_score
+        result.score = result.overall_score;
         result.messageBreakdown = messageScores;
         return result;
     } catch (error) {
@@ -1093,7 +1098,7 @@ User Teaching: ${userTeaching}
 Respond ONLY with valid JSON:
 {
   "role": "Teacher",
-  "overall_score": <0-100>,
+  "overall_score": <independent holistic score 0-100>,
   "category_scores": {
     "clarity": <0-20>,
     "structure": <0-20>,
@@ -1124,7 +1129,9 @@ Respond ONLY with valid JSON:
     "improved": "<MAX 2 sentences>",
     "reasoning": "<MAX 1 sentence>"
   }
-}`;
+}
+
+CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1135,17 +1142,8 @@ Respond ONLY with valid JSON:
 
     try {
         const result = extractJson(responseText);
-
-        // Correct inflated scores (Matching Gemini logic)
-        const categoryScores: Record<string, any> = result.category_scores;
-        const categoryTotal = Object.values(categoryScores).reduce((sum: number, s: any) => sum + Number(s), 0);
-        const calculatedOverall = Math.round((categoryTotal / 120) * 100);
-
-        if (result.overall_score > calculatedOverall + 10) {
-            result.overall_score = calculatedOverall;
-            result.score = calculatedOverall;
-        }
-
+        // Ensure legacy score property matches overall_score
+        result.score = result.overall_score;
         return result;
     } catch (error) {
         console.error("Failed to parse Groq Teacher evaluation:", responseText);
@@ -1175,32 +1173,34 @@ export async function getEnhancedStorytellerEvaluationWithGroq(
 ): Promise<any> {
     console.log("🎯 getEnhancedStorytellerEvaluationWithGroq called");
 
-    const systemPrompt = `You are a BRUTALLY HONEST, world-class storytelling coach and literary critic. Analyze the storytelling performance with extreme precision.
+    const systemPrompt = `You are a professional literary evaluator, not a cheerleader. Your task is to critically evaluate a narrative using a strict, calibrated 0–20 scoring system.
 
 **STORYTELLING CONTEXT:**
 Prompt: ${storyPrompt}
 User Story: ${userStory}
 
-**EVALUATION CRITERIA (0-20 each):**
-1. Narrative Structure: Pacing, arc, and coherence.
-2. Character Development: Nuance, motivation, and growth.
-3. Show vs. Tell: Using sensory details and actions instead of flat descriptions.
-4. Emotional Impact: Connection with the audience and resonance.
-5. Conflict & Stakes: Clarity of the challenge and what is at risk.
-6. Creativity & Originality: Unique perspectives and subverting tropes.
+**IMPORTANT SCORING RULES:**
+1. SCORING ANCHORS:
+   - 0–5: Fundamentally broken, incoherent, or severely flawed
+   - 6–10: Weak execution, shallow depth, basic competence only
+   - 11–14: Solid, readable, but safe or limited
+   - 15–17: Strong, well-crafted, noticeable skill
+   - 18–20: Rare, exceptional, emotionally or structurally outstanding
+2. Scores of 18–20 are EXTREMELY RARE. Reserve them only for exceptional, near-publishable, or award-level writing. 
+3. Judge execution depth, not surface polish. Distinguish between “good writing” and “exceptional writing.”
+4. Creativity & Originality must be judged independently. Familiar tropes or derivative plots MUST reduce this score, even if execution is strong. Subversion or fresh perspectives are required for high scores.
+5. Emotional Impact is NOT tone or mood. Judge based on emotional escalation, psychological depth, and lasting resonance/catharsis.
+6. Show vs. Tell requires demonstrable showing. Explicit thematic statements or direct explanations of emotions reduce this score.
+7. Narrative Structure must consider scale. Short-form narratives must be exceptionally efficient, layered, and deliberate to get high scores.
+8. Deduct points for missing depth, rushed resolution, underdeveloped arcs, or safe choices. Avoid score clustering.
 
-**STRICT SCORING PHILOSOPHY:**
-- Overall score (0-100) evaluates COMPLETE PERFORMANCE.
-- 0-30: Poor - Generic, flat, or confusing.
-- 31-50: Basic - Functional but lacks depth or "showing".
-- 51-70: Good - Competent storytelling with clear structure.
-- 71-85: Excellent - Strong voice, effective sensory details, and clear stakes.
-- 86-100: Master-level - Professional quality, profound theme, and flawless execution.
+**STORY COMPLETENESS:** Penalize heavily if the story is unfinished or feels like a summary rather than a full narration.
 
 Respond ONLY with valid JSON:
 {
   "role": "Storyteller",
-  "overall_score": <0-100>,
+  "overall_score": <independent holistic score 0-100>,
+  "summary_rating": <"Poor" | "Developing" | "Competent" | "Strong" | "Exceptional">,
   "category_scores": {
     "narrativeStructure": <0-20>,
     "characterDevelopment": <0-20>,
@@ -1208,6 +1208,14 @@ Respond ONLY with valid JSON:
     "emotionalImpact": <0-20>,
     "conflictAndStakes": <0-20>,
     "creativity": <0-20>
+  },
+  "category_justifications": {
+    "narrativeStructure": "<1-2 sentences justifying this specific score>",
+    "characterDevelopment": "<1-2 sentences justifying this specific score>",
+    "showVsTell": "<1-2 sentences justifying this specific score>",
+    "emotionalImpact": "<1-2 sentences justifying this specific score>",
+    "conflictAndStakes": "<1-2 sentences justifying this specific score>",
+    "creativity": "<1-2 sentences justifying this specific score>"
   },
   "feedback": "<MAX 2 sentences of high-level assessment>",
   "tips": ["SHORT tip 1", "SHORT tip 2", "SHORT tip 3"],
@@ -1217,9 +1225,9 @@ Respond ONLY with valid JSON:
   "storytellingAnalysis": {
     "strongestMoment": "<MAX 1 sentence>",
     "weakestMoment": "<MAX 1 sentence>",
-    "sensoryDetails": "<1 sentence analysis of sensory usage>",
-    "conflictAnalysis": "<1 sentence analysis of stakes>",
-    "themeAndSubtext": "<1 sentence identification of deeper meaning>"
+    "sensoryDetails": "<1 sentence analysis>",
+    "conflictAnalysis": "<1 sentence analysis>",
+    "themeAndSubtext": "<1 sentence identification>"
   },
   "communicationBehavior": {
     "profile": "<3 words>",
@@ -1228,10 +1236,12 @@ Respond ONLY with valid JSON:
   },
   "exampleRewrite": {
     "original": "<pick a 'telling' sentence>",
-    "improved": "<rewrite it to 'show' with vivid detail>",
-    "reasoning": "<why this improves the story>"
+    "improved": "<rewrite it to 'show'>",
+    "reasoning": "<why>"
   }
-}`;
+}
+
+CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1242,17 +1252,8 @@ Respond ONLY with valid JSON:
 
     try {
         const result = extractJson(responseText);
-
-        // Correct inflated scores
-        const categoryScores: Record<string, any> = result.category_scores;
-        const categoryTotal = Object.values(categoryScores).reduce((sum: number, s: any) => sum + Number(s), 0);
-        const calculatedOverall = Math.round((categoryTotal / 120) * 100);
-
-        if (result.overall_score > calculatedOverall + 10) {
-            result.overall_score = calculatedOverall;
-            result.score = calculatedOverall;
-        }
-
+        // Ensure legacy score property matches overall_score
+        result.score = result.overall_score;
         return result;
     } catch (error) {
         console.error("Failed to parse Groq Storyteller evaluation:", responseText);

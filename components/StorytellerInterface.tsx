@@ -594,59 +594,71 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
                 </p>
               </div>
 
-              {/* Overall Score */}
-              <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300">
-                <div className="flex items-center justify-center mb-6">
-                  <h3 className="text-xl font-semibold text-white">
-                    Overall Storytelling Score
-                  </h3>
-                </div>
-                <div className="flex justify-center">
-                  <div className="relative w-32 h-32 group">
-                    {/* Glow effect */}
-                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              {/* Overall Score & Rating */}
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex-1 bg-gray-800/30 rounded-lg p-6 border border-gray-700 hover:border-gray-600 transition-all duration-300">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-semibold text-white">
+                      Overall Score
+                    </h3>
+                    {feedback.summary_rating && (
+                      <span className={`px-4 py-1 rounded-full text-sm font-bold uppercase tracking-wider shadow-lg ${feedback.summary_rating === "Exceptional" ? "bg-purple-600 text-white shadow-purple-500/50" :
+                        feedback.summary_rating === "Strong" ? "bg-blue-600 text-white shadow-blue-500/50" :
+                          feedback.summary_rating === "Competent" ? "bg-green-600 text-white shadow-green-500/50" :
+                            feedback.summary_rating === "Developing" ? "bg-yellow-600 text-black shadow-yellow-500/50" :
+                              "bg-red-600 text-white shadow-red-500/50"
+                        }`}>
+                        {feedback.summary_rating}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-center">
+                    <div className="relative w-32 h-32 group">
+                      {/* Glow effect */}
+                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-500/20 to-blue-500/20 blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
 
-                    <svg
-                      className="w-32 h-32 transform -rotate-90 relative z-10"
-                      viewBox="0 0 36 36"
-                    >
-                      <path
-                        className="text-gray-700"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        fill="none"
-                        d="M18 2.0845
-                        a 15.9155 15.9155 0 0 1 0 31.831
-                        a 15.9155 15.9155 0 0 1 0 -31.831"
-                      />
-                      <path
-                        className="text-white transition-all duration-2000 ease-out drop-shadow-lg"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        fill="none"
-                        strokeDasharray={`${feedback.overall_score}, 100`}
-                        d="M18 2.0845
-                        a 15.9155 15.9155 0 0 1 0 31.831
-                        a 15.9155 15.9155 0 0 1 0 -31.831"
-                      />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center z-10">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-white animate-pulse">
-                          {feedback.overall_score}
+                      <svg
+                        className="w-32 h-32 transform -rotate-90 relative z-10"
+                        viewBox="0 0 36 36"
+                      >
+                        <path
+                          className="text-gray-700"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          fill="none"
+                          d="M18 2.0845
+                          a 15.9155 15.9155 0 0 1 0 31.831
+                          a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path
+                          className="text-white transition-all duration-2000 ease-out drop-shadow-lg"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          fill="none"
+                          strokeDasharray={`${feedback.overall_score}, 100`}
+                          d="M18 2.0845
+                          a 15.9155 15.9155 0 0 1 0 31.831
+                          a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center z-10">
+                        <div className="text-center">
+                          <div className="text-3xl font-bold text-white animate-pulse">
+                            {feedback.overall_score}
+                          </div>
+                          <div className="text-sm text-gray-400">/100</div>
                         </div>
-                        <div className="text-sm text-gray-400">/100</div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Category Scores */}
+              {/* Category Scores & Justifications */}
               <div className="bg-gray-800/30 rounded-lg p-6 border border-gray-700">
                 <h3 className="text-xl font-semibold text-white mb-6 text-center">
-                  Individual Category Performance (0-20 each)
+                  Literary Depth Analysis (0-20 scale)
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                   {Object.entries(feedback.category_scores).map(
@@ -732,6 +744,39 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
                     },
                   )}
                 </div>
+
+                {/* Justifications Grid */}
+                {feedback.category_justifications && (
+                  <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-700 pt-6">
+                    {Object.entries(feedback.category_justifications).map(([category, justification]) => {
+                      const categoryNames: { [key: string]: string } = {
+                        narrativeStructure: "Narrative Structure",
+                        characterDevelopment: "Character Development",
+                        showVsTell: "Show vs. Tell",
+                        emotionalImpact: "Emotional Impact",
+                        conflictAndStakes: "Conflict & Stakes",
+                        creativity: "Creativity & Originality",
+                        engagement: "Engagement & Pacing",
+                        // Legacy support
+                        clarity: "Clarity",
+                        vocabulary: "Vocabulary Richness",
+                        grammar: "Grammar Accuracy",
+                        logic: "Logic & Coherence",
+                        fluency: "Fluency",
+                      };
+                      return (
+                        <div key={category} className="bg-gray-900/40 p-4 rounded-lg border border-gray-700/50">
+                          <div className="text-xs font-bold text-purple-400 uppercase tracking-widest mb-1">
+                            {categoryNames[category] || category}
+                          </div>
+                          <p className="text-sm text-gray-300 leading-relaxed italic">
+                            "{justification}"
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Storyteller Feedback */}
@@ -936,7 +981,7 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
               )}
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+              <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4 pb-8">
                 <button
                   onClick={handleTryAgain}
                   className="w-full sm:w-auto px-8 py-3 bg-white text-black rounded-xl font-semibold hover:bg-gray-100 transition-all duration-300 shadow-lg shadow-white/5 active:scale-95"
@@ -960,7 +1005,7 @@ const StorytellerInterface: React.FC<StorytellerInterfaceProps> = ({
             </div>
           )}
         </div>
-      </div>
+      </div >
 
       <PDFNoticeModal
         isOpen={showPDFNotice}

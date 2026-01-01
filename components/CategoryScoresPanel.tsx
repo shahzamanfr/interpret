@@ -54,22 +54,19 @@ const CategoryScoresPanel: React.FC<CategoryScoresPanelProps> = ({
 
   return (
     <div
-      className={`border-t pt-8 ${
-        theme === "dark" ? "border-gray-800" : "border-gray-200"
-      }`}
+      className={`border-t pt-8 ${theme === "dark" ? "border-gray-800" : "border-gray-200"
+        }`}
     >
       <div className="mb-6">
         <h3
-          className={`text-3xl font-bold tracking-tighter ${
-            theme === "dark" ? "text-white" : "text-black"
-          }`}
+          className={`text-3xl font-bold tracking-tighter ${theme === "dark" ? "text-white" : "text-black"
+            }`}
         >
           Detailed Analysis
         </h3>
         <p
-          className={`mt-1 ${
-            theme === "dark" ? "text-gray-500" : "text-gray-600"
-          }`}
+          className={`mt-1 ${theme === "dark" ? "text-gray-500" : "text-gray-600"
+            }`}
         >
           Breakdown of your performance across key communication skills.
         </p>
@@ -82,9 +79,8 @@ const CategoryScoresPanel: React.FC<CategoryScoresPanelProps> = ({
           return (
             <div
               key={category}
-              className={`ui-card p-4 rounded-xl ${
-                theme === "dark" ? "bg-gray-800/50" : "bg-gray-50"
-              }`}
+              className={`ui-card p-4 rounded-xl ${theme === "dark" ? "bg-gray-800/50" : "bg-gray-50"
+                }`}
             >
               <div className="text-center">
                 <div
@@ -93,23 +89,20 @@ const CategoryScoresPanel: React.FC<CategoryScoresPanelProps> = ({
                   {score}
                 </div>
                 <div
-                  className={`text-sm ${
-                    theme === "dark" ? "text-gray-400" : "text-gray-600"
-                  }`}
+                  className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"
+                    }`}
                 >
                   /20
                 </div>
                 <div
-                  className={`text-sm font-medium mt-2 ${
-                    theme === "dark" ? "text-white" : "text-black"
-                  }`}
+                  className={`text-sm font-medium mt-2 ${theme === "dark" ? "text-white" : "text-black"
+                    }`}
                 >
                   {categoryNames[category] || category}
                 </div>
                 <div
-                  className={`w-full rounded-full h-2 mt-3 ${
-                    theme === "dark" ? "bg-gray-700" : "bg-gray-300"
-                  }`}
+                  className={`w-full rounded-full h-2 mt-3 ${theme === "dark" ? "bg-gray-700" : "bg-gray-300"
+                    }`}
                 >
                   <div
                     className={`h-2 rounded-full transition-all duration-1000 ${getScoreBgColor(Number(score))}`}
