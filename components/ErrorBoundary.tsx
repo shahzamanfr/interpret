@@ -1,7 +1,7 @@
-import React from "react";
+import React, { Component, ReactNode, ErrorInfo } from "react";
 
 interface ErrorBoundaryProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -9,10 +9,11 @@ interface ErrorBoundaryState {
   message?: string;
 }
 
-class ErrorBoundary extends React.Component<
+class ErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
+  public declare props: ErrorBoundaryProps;
   state: ErrorBoundaryState = { hasError: false };
 
   constructor(props: ErrorBoundaryProps) {
@@ -51,31 +52,27 @@ class ErrorBoundary extends React.Component<
       return (
         <div className="min-h-screen flex items-center justify-center p-6">
           <div
-            className={`max-w-md w-full text-center border rounded-xl p-6 ${
-              isDark ? "border-gray-800 bg-black" : "border-gray-300 bg-white"
-            }`}
+            className={`max-w-md w-full text-center border rounded-xl p-6 ${isDark ? "border-gray-800 bg-black" : "border-gray-300 bg-white"
+              }`}
           >
             <h1
-              className={`text-xl font-semibold mb-2 ${
-                isDark ? "text-white" : "text-black"
-              }`}
+              className={`text-xl font-semibold mb-2 ${isDark ? "text-white" : "text-black"
+                }`}
             >
               Something went wrong
             </h1>
             <p
-              className={`text-sm mb-4 ${
-                isDark ? "text-gray-400" : "text-gray-600"
-              }`}
+              className={`text-sm mb-4 ${isDark ? "text-gray-400" : "text-gray-600"
+                }`}
             >
               {this.state.message || "An unexpected error occurred."}
             </p>
             <button
               onClick={() => window.location.reload()}
-              className={`px-4 py-2 rounded-lg font-medium ${
-                isDark
-                  ? "bg-white text-black hover:bg-gray-100"
-                  : "bg-black text-white hover:bg-gray-900"
-              }`}
+              className={`px-4 py-2 rounded-lg font-medium ${isDark
+                ? "bg-white text-black hover:bg-gray-100"
+                : "bg-black text-white hover:bg-gray-900"
+                }`}
             >
               Reload
             </button>
