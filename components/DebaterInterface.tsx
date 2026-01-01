@@ -17,6 +17,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
 import LoadingAnalysis from "./LoadingAnalysis";
 import { extractTextFromImageOrPDF } from "../services/ocrService";
+import PDFNoticeModal from "./PDFNoticeModal";
 
 interface DebaterInterfaceProps {
   onBack: () => void;
@@ -78,6 +79,7 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai, grokApi
     error: null,
   });
   const [isOCRLoading, setIsOCRLoading] = useState<boolean>(false);
+  const [showPDFNotice, setShowPDFNotice] = useState<boolean>(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -335,7 +337,17 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai, grokApi
     try {
       let combinedText = "";
       for (const file of fileUploadState.files) {
-        // Extract text from each file using OCR.space
+        console.log(`📝 [UI] Processing file: ${file.name}`);
+
+        // Check if the file is a PDF before even trying OCR
+        if (file.type === "application/pdf") {
+          console.warn(`⚠️ [UI] PDF detected in upload: ${file.name}`);
+          setShowPDFNotice(true);
+          setFileUploadState(prev => ({ ...prev, isProcessing: false }));
+          return;
+        }
+
+        // Extract text from each file using OCR library
         const result = await extractTextFromImageOrPDF(file.content, file.type);
         if (result.text) {
           combinedText += `\n\n--- Extracted from ${file.name} ---\n${result.text}`;
@@ -1388,6 +1400,11 @@ const DebaterInterface: React.FC<DebaterInterfaceProps> = ({ onBack, ai, grokApi
           )}
         </div>
       </div>
+
+      <PDFNoticeModal
+        isOpen={showPDFNotice}
+        onClose={() => setShowPDFNotice(false)}
+      />
     </>
   );
 };

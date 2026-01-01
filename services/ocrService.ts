@@ -1,17 +1,21 @@
 /**
- * OCR Service - Text extraction from images and PDFs using OCR.space
+ * OCR Service - Text extraction from images using Tesseract.js
+ * Free, reliable, client-side OCR - no API keys needed!
+ * 
+ * Note: PDF support removed due to worker configuration issues.
+ * To extract text from PDFs, please convert them to images first.
  */
 
-const OCR_SPACE_API_KEY = import.meta.env.VITE_OCR_SPACE_API_KEY || "K81443057188957";
-const OCR_SPACE_URL = "https://api.ocr.space/parse/image";
+import { createWorker } from 'tesseract.js';
 
 export interface OCRResult {
     text: string;
     error?: string;
+    confidence?: number;
 }
 
 /**
- * Extracts text from a file (Base64 content) using OCR.space API
+ * Extracts text from an image using Tesseract.js
  * @param base64Content Base64 string of the file (without prefix)
  * @param fileType MIME type of the file
  * @returns Object containing the extracted text or an error message
@@ -20,46 +24,79 @@ export async function extractTextFromImageOrPDF(
     base64Content: string,
     fileType: string
 ): Promise<OCRResult> {
-    try {
-        const formData = new FormData();
-        formData.append("apikey", OCR_SPACE_API_KEY);
-        formData.append("base64Image", `data:${fileType};base64,${base64Content}`);
-        formData.append("language", "eng");
-        formData.append("isOverlayRequired", "false");
-        formData.append("filetype", fileType === "application/pdf" ? "PDF" : "");
-        formData.append("isTable", "false");
-        formData.append("OCREngine", "2"); // Engine 2 is generally better for professional text
+    console.log("🔍 [OCR] Starting text extraction...");
+    console.log("📄 [OCR] File type:", fileType);
 
-        const response = await fetch(OCR_SPACE_URL, {
-            method: "POST",
-            body: formData,
+    // Check if it's a PDF
+    if (fileType === "application/pdf") {
+        console.warn("⚠️ [OCR] PDF files are not supported");
+        return {
+            text: "",
+            error: "PDF text extraction is not supported. Please convert your PDF to an image (screenshot each page) or manually paste the content.",
+        };
+    }
+
+    // Check if it's an image
+    if (!fileType.startsWith("image/")) {
+        console.error("❌ [OCR] Unsupported file type:", fileType);
+        return {
+            text: "",
+            error: `Unsupported file type: ${fileType}. Please upload an image file (PNG, JPG, etc.)`,
+        };
+    }
+
+    // Handle image files with Tesseract
+    let worker;
+    try {
+        console.log("🚀 [Tesseract] Initializing OCR worker...");
+
+        worker = await createWorker('eng', 1, {
+            logger: (m) => {
+                if (m.status === 'recognizing text') {
+                    console.log(`📊 [Tesseract] Progress: ${Math.round(m.progress * 100)}%`);
+                }
+            }
         });
 
-        if (!response.ok) {
-            throw new Error(`OCR API responded with status: ${response.status}`);
-        }
+        console.log("✅ [Tesseract] Worker initialized");
+        console.log("📤 [Tesseract] Processing image...");
 
-        const data = await response.json();
+        const imageData = `data:${fileType};base64,${base64Content}`;
+        const { data } = await worker.recognize(imageData);
 
-        if (data.IsErroredOnProcessing) {
+        console.log("✅ [Tesseract] Text extraction complete");
+        console.log("📏 [Tesseract] Extracted text length:", data.text.length, "characters");
+        console.log("🎯 [Tesseract] Confidence:", Math.round(data.confidence), "%");
+
+        await worker.terminate();
+        console.log("🧹 [Tesseract] Worker terminated");
+
+        if (!data.text || data.text.trim().length === 0) {
+            console.warn("⚠️ [Tesseract] No text found in image");
             return {
                 text: "",
-                error: data.ErrorMessage?.[0] || "OCR processing error",
+                error: "No text could be found in the image. The image may be blank or contain only graphics.",
             };
         }
 
-        const extractedText = data.ParsedResults?.map(
-            (result: any) => result.ParsedText
-        ).join("\n") || "";
-
         return {
-            text: extractedText,
+            text: data.text.trim(),
+            confidence: data.confidence,
         };
     } catch (error) {
-        console.error("OCR extraction failed:", error);
+        console.error("❌ [Tesseract] Extraction failed:", error);
+
+        if (worker) {
+            try {
+                await worker.terminate();
+            } catch (e) {
+                console.error("Failed to terminate worker:", e);
+            }
+        }
+
         return {
             text: "",
-            error: error instanceof Error ? error.message : "Unknown error occurred during OCR",
+            error: error instanceof Error ? `OCR Error: ${error.message}` : "Failed to extract text from image",
         };
     }
 }

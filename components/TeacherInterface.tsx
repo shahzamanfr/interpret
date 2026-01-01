@@ -18,6 +18,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import CustomVoiceRecorder from "./CustomVoiceRecorder";
 import LoadingAnalysis from "./LoadingAnalysis";
 import { extractTextFromImageOrPDF } from "../services/ocrService";
+import PDFNoticeModal from "./PDFNoticeModal";
 
 interface TeacherInterfaceProps {
   onBack: () => void;
@@ -54,6 +55,7 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai, grokApi
     error: null,
   });
   const [isOCRLoading, setIsOCRLoading] = useState<boolean>(false);
+  const [showPDFNotice, setShowPDFNotice] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Predefined topics for selection
@@ -279,18 +281,54 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai, grokApi
     setFileUploadState(prev => ({ ...prev, isProcessing: true, error: null }));
     setError(null);
 
+    console.log("🚀 [UI] Starting file processing...");
+
     try {
       let combinedText = "";
+      let hasErrors = false;
+      const errors: string[] = [];
+
       for (const file of fileUploadState.files) {
-        // Extract text from each file using OCR.space
+        console.log(`📝 [UI] Processing file: ${file.name}`);
+
+        // Check if the file is a PDF before even trying OCR
+        if (file.type === "application/pdf") {
+          console.warn(`⚠️ [UI] PDF detected in upload: ${file.name}`);
+          setShowPDFNotice(true);
+          setFileUploadState(prev => ({ ...prev, isProcessing: false }));
+          return;
+        }
+
+        // Extract text from each file using OCR library
         const result = await extractTextFromImageOrPDF(file.content, file.type);
+
         if (result.text) {
+          console.log(`✅ [UI] Successfully extracted text from ${file.name}`);
           combinedText += `\n\n--- Extracted from ${file.name} ---\n${result.text}`;
         } else if (result.error) {
-          throw new Error(`OCR Error (${file.name}): ${result.error}`);
+          console.error(`❌ [UI] Failed to extract from ${file.name}:`, result.error);
+          hasErrors = true;
+          errors.push(`${file.name}: ${result.error}`);
         }
       }
 
+      if (hasErrors) {
+        const errorMsg = `Failed to extract text from some files:\n${errors.join('\n')}`;
+        console.error("❌ [UI] File processing completed with errors");
+        setError(errorMsg);
+        setFileUploadState(prev => ({ ...prev, isProcessing: false, error: errorMsg }));
+        return;
+      }
+
+      if (!combinedText.trim()) {
+        const errorMsg = "No text could be extracted from the uploaded files.";
+        console.warn("⚠️ [UI] No text extracted");
+        setError(errorMsg);
+        setFileUploadState(prev => ({ ...prev, isProcessing: false, error: errorMsg }));
+        return;
+      }
+
+      console.log("✅ [UI] File processing completed successfully");
       setUserScenario((prev) =>
         prev.trim()
           ? `${prev}\n\n${combinedText.trim()}`
@@ -299,7 +337,7 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai, grokApi
 
       setFileUploadState({ files: [], isProcessing: false, error: null });
     } catch (err) {
-      console.error("Error processing files:", err);
+      console.error("❌ [UI] Error processing files:", err);
       const errorMsg = err instanceof Error ? err.message : "An error occurred while processing your files. Please try again.";
       setError(errorMsg);
       setFileUploadState(prev => ({ ...prev, isProcessing: false, error: errorMsg }));
@@ -1410,6 +1448,11 @@ const TeacherInterface: React.FC<TeacherInterfaceProps> = ({ onBack, ai, grokApi
           )}
         </div>
       </div>
+
+      <PDFNoticeModal
+        isOpen={showPDFNotice}
+        onClose={() => setShowPDFNotice(false)}
+      />
     </>
   );
 };

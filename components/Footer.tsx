@@ -111,17 +111,13 @@ const Footer: React.FC = () => {
             }`}
         >
           <div className="text-center space-y-3">
-            <p
-              className={`text-base font-medium ${theme === "dark" ? "text-gray-300" : "text-gray-700"
-                }`}
-            >
-              Website created by Mohammed Shahzaman
-            </p>
+            
             <p
               className={`text-base ${theme === "dark" ? "text-gray-500" : "text-gray-500"
                 }`}
             >
-              © 2024 Interpret. All rights reserved.
+              © 2026 Interpret. All rights reserved. buit by<br></br>
+              Mohammed Shahzaman.
             </p>
           </div>
         </div>

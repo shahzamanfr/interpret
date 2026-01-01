@@ -62,10 +62,29 @@ app.use(express.json({ limit: "2mb" }));
 app.use(
   cors({
     origin: (origin, cb) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin))
+
+      // If allowed origins is empty, allow all (permissive mode)
+      if (ALLOWED_ORIGINS.length === 0) {
         return cb(null, true);
-      return cb(new Error("Not allowed by CORS"));
+      }
+
+      // Check if origin is explicitly allowed
+      if (ALLOWED_ORIGINS.includes(origin)) {
+        return cb(null, true);
+      }
+
+      // Special case: allow localhost for development to prevent developer friction
+      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        console.log(`[backend] 🔓 Local origin allowed: ${origin}`);
+        return cb(null, true);
+      }
+
+      console.warn(`[backend] ❌ CORS Blocked origin: ${origin}`);
+      console.warn(`[backend] Allowed origins (from .env): ${ALLOWED_ORIGINS.join(', ')}`);
+
+      return cb(new Error(`Not allowed by CORS: Origin ${origin} not in allowed list`));
     },
     credentials: true,
   }),
@@ -678,4 +697,6 @@ app.listen(PORT, () => {
       `[backend] 💡 Get free API key: https://www.assemblyai.com/ ($50 credit)`,
     );
   }
+
+  console.log(`[backend] 🔒 Allowed origins: ${ALLOWED_ORIGINS.length === 0 ? 'ALL (permissive)' : ALLOWED_ORIGINS.join(', ')}`);
 });

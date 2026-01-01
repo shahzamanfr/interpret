@@ -131,6 +131,44 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
                 {domainDescription}
               </p>
             )}
+
+            {/* Temporary Notice */}
+            <div
+              className={`mt-4 rounded-lg border px-4 py-3 ${theme === "dark"
+                ? "border-amber-900/50 bg-amber-950/30 text-amber-200"
+                : "border-amber-300 bg-amber-50 text-amber-900"
+                }`}
+              role="alert"
+              style={{
+                animation: 'fadeIn 0.5s ease-in, pulse 2s ease-in-out infinite'
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <svg
+                  className="mt-0.5 h-5 w-5 flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">
+                    Image description functionality is temporarily unavailable
+                  </p>
+                  <p
+                    className={`mt-1 text-xs ${theme === "dark" ? "text-amber-300/80" : "text-amber-800"
+                      }`}
+                  >
+                    We're currently experiencing issues with our vision AI service. This feature will be restored shortly. Thank you for your patience.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
           <div className="flex gap-2">
             <button
@@ -177,8 +215,8 @@ const ImagePanel = React.forwardRef<HTMLImageElement, ImagePanelProps>(
                 onClick={onPlayWithFriend}
                 disabled={isLoading}
                 className={`self-start rounded-full border p-2 transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${theme === "dark"
-                    ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
-                    : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
+                  ? "border-gray-700 text-gray-400 hover:bg-gray-800 focus:ring-gray-600"
+                  : "border-gray-300 text-black hover:bg-gray-200 focus:ring-gray-300"
                   }`}
                 aria-label="Play with friend"
                 title="Play with Friend"

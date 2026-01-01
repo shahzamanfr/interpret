@@ -76,9 +76,12 @@ async function callGroq(
 
     for (let i = 0; i < keys.length; i++) {
         const apiKey = keys[i];
-        console.log(`🔑 Trying API key ${i + 1}/${keys.length}...`);
+        console.log(`🔑 [Groq] Trying API key ${i + 1}/${keys.length}...`);
 
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
             const response = await fetch(GROQ_API_URL, {
                 method: "POST",
                 headers: {
@@ -86,46 +89,52 @@ async function callGroq(
                     Authorization: `Bearer ${apiKey}`,
                 },
                 body: JSON.stringify(requestBody),
-            });
+                signal: controller.signal
+            }).finally(() => clearTimeout(timeoutId));
 
             console.log(`📥 GROQ API RESPONSE STATUS (Key ${i + 1}):`, response.status, response.statusText);
 
             if (!response.ok) {
-                const error = await response.text();
+                const errorText = await response.text();
+                console.warn(`⚠️ [Groq] Key ${i + 1} failed (Status: ${response.status}). Error: ${errorText.substring(0, 100)}`);
 
-                // Check if it's a quota/rate limit error (429)
-                if (response.status === 429) {
-                    console.warn(`⚠️ Key ${i + 1} quota exceeded, trying next key...`);
-                    lastError = new Error(`Quota exceeded for key ${i + 1}`);
-                    continue; // Try next key
+                // For transient errors or quota limits, try next key
+                if (response.status === 429 || response.status >= 500 || response.status === 401) {
+                    console.log(`🔄 [Groq] Attempting fallback to next key...`);
+                    lastError = new Error(`Key ${i + 1} failed with status ${response.status}: ${errorText.substring(0, 50)}`);
+                    continue;
                 }
 
-                // For other errors, throw immediately
-                console.error(`❌ GROQ API ERROR (Key ${i + 1}):`, error);
-                throw new Error(`Groq API error: ${response.status} - ${error}`);
+                // For other client errors (400, etc.), we might still want to try another key
+                // in case it's a model availability issue or account-specific problem
+                console.log(`🔄 [Groq] Non-typical error ${response.status}, trying next key in case of account issue...`);
+                lastError = new Error(`Key ${i + 1} error ${response.status}`);
+                continue;
             }
 
             const data: GroqResponse = await response.json();
             console.log(`✅ GROQ API SUCCESS (Key ${i + 1}):`, {
                 hasChoices: !!data.choices,
                 choiceCount: data.choices?.length,
-                contentLength: data.choices?.[0]?.message?.content?.length,
-                contentPreview: data.choices?.[0]?.message?.content?.substring(0, 200)
+                contentLength: data.choices?.[0]?.message?.content?.length
             });
 
             return data.choices[0]?.message?.content || "";
 
-        } catch (error) {
-            // If it's not a quota error, rethrow
-            if (error instanceof Error && !error.message.includes("Quota exceeded")) {
-                throw error;
+        } catch (error: any) {
+            console.warn(`⚠️ [Groq] Error with key ${i + 1}:`, error.message || error);
+            lastError = error instanceof Error ? error : new Error(String(error));
+
+            // If we have more keys, continue to the next one
+            if (i < keys.length - 1) {
+                console.log(`🔄 [Groq] Falling back due to exception...`);
+                continue;
             }
-            lastError = error as Error;
         }
     }
 
     // All keys failed
-    throw new Error(`All ${keys.length} API keys exhausted. Last error: ${lastError?.message || 'Unknown error'}`);
+    throw new Error(`All ${keys.length} Groq API keys exhausted. Last error: ${lastError?.message || 'Unknown error'}`);
 }
 
 /**
@@ -173,7 +182,7 @@ function extractJson(text: string): any {
  * Note: apiKey parameter kept for compatibility but not used
  */
 export async function describeImageWithGrok(
-    apiKey: string,
+    apiKey: string | string[],
     imageBase64: string
 ): Promise<string> {
     console.log("🖼️ Using Hugging Face BLIP (via backend proxy)...");
@@ -241,7 +250,7 @@ export async function describeImageWithGrok(
  * Get coaching feedback using Groq
  */
 export async function getCoachingFeedbackWithGroq(
-    apiKey: string,
+    apiKey: string | string[],
     aiCaption: string,
     userExplanation: string,
     coachMode: string,
@@ -323,7 +332,7 @@ Be honest and constructive. Score based on actual performance.`;
  * Refine scenario for teaching using Groq
  */
 export async function refineScenarioForTeachingWithGroq(
-    apiKey: string,
+    apiKey: string | string[],
     userScenario: string
 ): Promise<string> {
     const systemPrompt = `You are an expert educational content organizer. Transform the user's raw scenario into a clear, structured, and teachable format.
@@ -358,7 +367,7 @@ Keep it concise (2-3 paragraphs maximum).`;
  * Refine scenario for storytelling using Groq
  */
 export async function refineScenarioForStorytellingWithGroq(
-    apiKey: string,
+    apiKey: string | string[],
     userScenario: string
 ): Promise<string> {
     const systemPrompt = `You are a master storyteller. Transform the user's idea into an engaging story prompt that stays strictly on-topic.
@@ -393,7 +402,7 @@ No meta commentary. No headings. No bullets. Output only the prompt.`;
  * Get debate response using Groq
  */
 export async function getDebateResponseWithGroq(
-    apiKey: string,
+    apiKey: string | string[],
     topic: string,
     userArgument: string,
     turnNumber: number,
@@ -458,7 +467,7 @@ Fight back hard with logic and evidence. Be aggressive, confrontational, and pas
  * Get debate evaluation using Groq
  */
 export async function getDebateEvaluationWithGroq(
-    apiKey: string,
+    apiKey: string | string[],
     debateTopic: string,
     conversationHistory: Array<{
         type: "user" | "ai";
