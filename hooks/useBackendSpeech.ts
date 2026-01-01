@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { getApiUrl } from '../utils/config';
 
 interface SpeechConfig {
   currentProvider: string;
@@ -25,9 +26,9 @@ export const useBackendSpeech = () => {
 
   const checkConfig = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:8787/api/speech/config');
+      const response = await fetch(getApiUrl('/api/speech/config'));
       if (!response.ok) throw new Error('Failed to fetch config');
-      
+
       const configData = await response.json();
       setConfig(configData);
       return configData;
@@ -45,7 +46,7 @@ export const useBackendSpeech = () => {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
 
-      const response = await fetch('http://localhost:8787/api/speech/transcribe', {
+      const response = await fetch(getApiUrl('/api/speech/transcribe'), {
         method: 'POST',
         body: formData
       });

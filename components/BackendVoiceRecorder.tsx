@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { MicIcon } from './icons/MicIcon';
-import { StopIcon } from './icons/StopIcon';
+import { getApiUrl } from "../utils/config";
+import MicIcon from './icons/MicIcon';
+import StopIcon from './icons/StopIcon';
 
 interface BackendVoiceRecorderProps {
   onTranscript: (text: string) => void;
@@ -21,21 +22,21 @@ export const BackendVoiceRecorder: React.FC<BackendVoiceRecorderProps> = ({
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
         }
       });
-      
+
       streamRef.current = stream;
       chunksRef.current = [];
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm;codecs=opus'
       });
-      
+
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
@@ -70,14 +71,14 @@ export const BackendVoiceRecorder: React.FC<BackendVoiceRecorderProps> = ({
       }
 
       const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
-      
+
       // Send to backend for transcription
       const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.webm');
+      formData.append("audio", audioBlob, "recording.webm");
 
-      const response = await fetch('http://localhost:8787/api/speech/transcribe', {
-        method: 'POST',
-        body: formData
+      const response = await fetch(getApiUrl("/api/speech/transcribe"), {
+        method: "POST",
+        body: formData,
       });
 
       if (!response.ok) {
@@ -86,7 +87,7 @@ export const BackendVoiceRecorder: React.FC<BackendVoiceRecorderProps> = ({
       }
 
       const result = await response.json();
-      
+
       if (result.success && result.text) {
         onTranscript(result.text);
       } else {
@@ -124,18 +125,18 @@ export const BackendVoiceRecorder: React.FC<BackendVoiceRecorderProps> = ({
       className={`
         flex items-center justify-center w-12 h-12 rounded-full
         transition-all duration-200 transform hover:scale-105
-        ${isRecording 
-          ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+        ${isRecording
+          ? 'bg-red-500 hover:bg-red-600 animate-pulse'
           : 'bg-blue-500 hover:bg-blue-600'
         }
         ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
         ${className}
       `}
       title={
-        isProcessing 
-          ? 'Processing...' 
-          : isRecording 
-            ? 'Stop Recording' 
+        isProcessing
+          ? 'Processing...'
+          : isRecording
+            ? 'Stop Recording'
             : 'Start Recording'
       }
     >

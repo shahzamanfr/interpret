@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { getApiUrl } from '../utils/config';
 
 interface CustomSpeechRecognitionOptions {
   onTranscript: (text: string) => void;
@@ -9,7 +10,7 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
   const [isRecording, setIsRecording] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [status, setStatus] = useState('');
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -25,29 +26,29 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
         console.warn('AudioContext not supported');
         return;
       }
-      
+
       const audioContext = new AudioContext();
       const analyser = audioContext.createAnalyser();
       const microphone = audioContext.createMediaStreamSource(stream);
-      
+
       analyser.fftSize = 256;
       microphone.connect(analyser);
-      
+
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
-      
+
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      
+
       const checkLevel = () => {
         if (!analyserRef.current) return;
-        
+
         analyser.getByteFrequencyData(dataArray);
         const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
         setAudioLevel(Math.round(average));
-        
+
         animationFrameRef.current = requestAnimationFrame(checkLevel);
       };
-      
+
       checkLevel();
     } catch (err) {
       console.error('Audio monitoring error:', err);
@@ -58,9 +59,9 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
     try {
       console.log('🎤 Starting...');
       setStatus('Requesting mic...');
-      
+
       // Request microphone with optimal settings
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -68,38 +69,38 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
         }
       });
       mediaStreamRef.current = stream;
-      
+
       console.log('✅ Mic granted');
       setStatus('🎙️ Recording... (speak now)');
       setIsRecording(true);
       startTimeRef.current = Date.now();
-      
+
       monitorAudioLevel(stream);
-      
+
       let mimeType = 'audio/webm';
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
         mimeType = 'audio/webm;codecs=opus';
       }
       console.log('✅ MIME:', mimeType);
-      
+
       if (!mimeType) {
         throw new Error('No supported audio format');
       }
-      
+
       audioChunksRef.current = [];
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
-      
+
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           console.log('Chunk:', e.data.size, 'bytes');
           audioChunksRef.current.push(e.data);
         }
       };
-      
+
       mediaRecorder.onstop = async () => {
         const duration = (Date.now() - startTimeRef.current) / 1000;
         console.log('📤 Recording duration:', duration, 'seconds');
-        
+
         if (duration < 2) {
           console.warn('⚠️ Too short:', duration, 's');
           setStatus('⚠️ Record for 3+ seconds');
@@ -107,11 +108,11 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
           setTimeout(() => setStatus(''), 3000);
           return;
         }
-        
+
         setStatus('Transcribing...');
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
         console.log('📤 Audio:', blob.size, 'bytes,', duration, 's, chunks:', audioChunksRef.current.length);
-        
+
         if (blob.size < 1000) {
           console.warn('⚠️ Empty audio');
           setStatus('⚠️ No audio');
@@ -119,27 +120,27 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
           setTimeout(() => setStatus(''), 3000);
           return;
         }
-        
+
         const formData = new FormData();
         formData.append('audio', blob, 'recording.webm');
-        
+
         try {
           console.log('🚀 Sending...');
-          const res = await fetch('http://localhost:8787/api/speech/transcribe', {
+          const res = await fetch(getApiUrl('/api/speech/transcribe'), {
             method: 'POST',
             body: formData,
           });
-          
+
           const data = await res.json();
           console.log('📥', res.status, ':', data);
-          
+
           if (!res.ok) {
             console.error('❌', data.message);
             setStatus('❌ Error');
             onError?.(data.message || 'Backend error');
             return;
           }
-          
+
           if (data.text && data.text.trim()) {
             console.log('✅', data.text);
             onTranscript(data.text);
@@ -154,18 +155,18 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
           onError?.('Transcription failed: ' + err.message);
           setStatus('❌ Failed');
         }
-        
+
         setTimeout(() => setStatus(''), 2000);
       };
-      
+
       mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
-      
+
     } catch (err: any) {
       console.error('❌ Mic error:', err);
       setStatus('');
       setIsRecording(false);
-      
+
       let errorMsg = 'Microphone access denied';
       if (err.name === 'NotAllowedError') {
         errorMsg = 'Please allow microphone access';
@@ -174,33 +175,33 @@ export const useCustomSpeechRecognition = ({ onTranscript, onError }: CustomSpee
       } else if (err.name === 'NotReadableError') {
         errorMsg = 'Microphone is in use';
       }
-      
+
       onError?.(errorMsg);
     }
   }, [monitorAudioLevel, onTranscript, onError]);
 
   const stopRecording = useCallback(() => {
     console.log('🛑 Stopping...');
-    
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-    
+
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(t => t.stop());
       mediaStreamRef.current = null;
     }
-    
+
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    
+
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-    
+
     setIsRecording(false);
     setAudioLevel(0);
   }, []);

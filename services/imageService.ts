@@ -27,7 +27,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://picsum.photos/seed/${uniqueSeed}/${width}/${height}`;
     }
   },
-  
+
   // Picsum with infinite random IDs
   picsumRandom: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -37,7 +37,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://picsum.photos/${width}/${height}?random=${randomId}-${randomSuffix}`;
     }
   },
-  
+
   // Picsum with infinite blur variations
   picsumBlurInfinite: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -48,7 +48,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://picsum.photos/${width}/${height}?random=${randomId}&blur=${blurAmount}&sig=${randomSuffix}`;
     }
   },
-  
+
   // Picsum with infinite grayscale variations
   picsumGrayscaleInfinite: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -59,7 +59,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://picsum.photos/${width}/${height}?random=${randomId}${grayscale}&sig=${randomSuffix}`;
     }
   },
-  
+
   // Picsum with infinite aspect ratio variations
   picsumAspectInfinite: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -74,7 +74,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://picsum.photos/${newWidth}/${newHeight}?random=${randomId}&sig=${randomSuffix}`;
     }
   },
-  
+
   // Unsplash with infinite variations
   unsplashInfinite: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -85,7 +85,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://source.unsplash.com/${width}x${height}/?${randomCategory}&sig=${timestamp}-${randomSuffix}`;
     }
   },
-  
+
   // Placeholder with infinite color/text variations
   placeholderInfinite: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -96,7 +96,7 @@ const INFINITE_IMAGE_SOURCES = {
       return `https://via.placeholder.com/${width}x${height}/${randomColor}/FFFFFF?text=${randomText}`;
     }
   },
-  
+
   // Lorem Picsum with infinite category variations
   picsumCategoryInfinite: {
     getRandomUrl: (width: number = 1280, height: number = 960) => {
@@ -110,11 +110,13 @@ const INFINITE_IMAGE_SOURCES = {
   }
 };
 
+import { BACKEND_URL } from "../utils/config";
+
 // Convert external image URLs to a CORS-friendly proxy so <img> loads reliably and canvas can read pixels
 function toCorsProxy(originalUrl: string): string {
   try {
     // Prefer backend proxy if present
-    const apiBase = (typeof window !== 'undefined' && (window as any).__AI_PROXY__) || '';
+    const apiBase = BACKEND_URL;
     if (apiBase) {
       return `${apiBase}/api/img?url=${encodeURIComponent(originalUrl)}`;
     }
@@ -189,26 +191,26 @@ const CURATED_IMAGES = {
  * @returns Promise<RandomImage>
  */
 export async function getRandomImage(
-  domainSlug?: string, 
-  width: number = 1280, 
+  domainSlug?: string,
+  width: number = 1280,
   height: number = 960
 ): Promise<RandomImage> {
   console.log('🎲 Generating INFINITE random image for domain:', domainSlug);
-  
+
   // INFINITE RANDOM GENERATION - NO TRACKING, NO LOOPS, JUST PURE RANDOMNESS
   const sources = Object.keys(INFINITE_IMAGE_SOURCES);
   const randomSource = sources[Math.floor(Math.random() * sources.length)];
-  
+
   try {
     const sourceConfig = INFINITE_IMAGE_SOURCES[randomSource as keyof typeof INFINITE_IMAGE_SOURCES];
     const imageUrl = sourceConfig.getRandomUrl(width, height);
-    
+
     console.log('🎲 Generated INFINITE random image:', {
       url: imageUrl,
       source: randomSource,
       timestamp: Date.now()
     });
-    
+
     return {
       url: toCorsProxy(imageUrl),
       source: randomSource,
@@ -217,14 +219,14 @@ export async function getRandomImage(
     };
   } catch (error) {
     console.warn(`Failed to get image from ${randomSource}, using guaranteed fallback:`, error);
-    
+
     // GUARANTEED FALLBACK - ALWAYS UNIQUE
     const timestamp = Date.now();
     const random1 = Math.floor(Math.random() * 999999999);
     const random2 = Math.random().toString(36).substring(2, 15);
     const random3 = Math.random().toString(36).substring(2, 15);
     const fallbackUrl = `https://picsum.photos/seed/${timestamp}-${random1}-${random2}-${random3}/${width}/${height}`;
-    
+
     return {
       url: toCorsProxy(fallbackUrl),
       source: 'picsum-infinite-fallback',
@@ -263,25 +265,25 @@ export async function getRandomImagesForDomain(
   height: number = 1200
 ): Promise<RandomImage[]> {
   console.log(`🎲 Generating ${count} random images for domain: ${domainSlug}`);
-  
+
   const images: RandomImage[] = [];
   const usedUrls = new Set<string>();
-  
+
   for (let i = 0; i < count; i++) {
     let attempts = 0;
     let image: RandomImage;
-    
+
     do {
       image = await getRandomImage(domainSlug, width, height);
       attempts++;
     } while (usedUrls.has(image.url) && attempts < 5);
-    
+
     if (!usedUrls.has(image.url)) {
       images.push(image);
       usedUrls.add(image.url);
     }
   }
-  
+
   return images;
 }
 
@@ -296,7 +298,7 @@ export async function getRandomImageWithRetry(
   maxRetries: number = 3
 ): Promise<RandomImage> {
   let lastError: Error | null = null;
-  
+
   const withTimeout = <T>(p: Promise<T>, ms: number) => new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('image load timeout')), ms);
     p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
@@ -339,7 +341,7 @@ export async function getRandomImageWithRetry(
       }
     }
   }
-  
+
   // If all attempts failed, return a guaranteed working INFINITE fallback
   console.warn('🚨 All INFINITE attempts failed, using guaranteed INFINITE fallback');
   const timestamp = Date.now();
@@ -347,7 +349,7 @@ export async function getRandomImageWithRetry(
   const random2 = Math.random().toString(36).substring(2, 15);
   const random3 = Math.random().toString(36).substring(2, 15);
   const random4 = Math.random().toString(36).substring(2, 15);
-  
+
   return {
     url: toCorsProxy(`https://picsum.photos/seed/${timestamp}-${random1}-${random2}-${random3}-${random4}/1280/960`),
     source: 'picsum-infinite-guaranteed-fallback',
@@ -382,7 +384,7 @@ export function getUsedImagesCount(): { urls: number; seeds: number } {
  */
 export async function preloadImages(images: RandomImage[]): Promise<RandomImage[]> {
   const loadedImages: RandomImage[] = [];
-  
+
   for (const image of images) {
     try {
       await new Promise((resolve, reject) => {
@@ -396,6 +398,6 @@ export async function preloadImages(images: RandomImage[]): Promise<RandomImage[
       console.warn(`Failed to preload image: ${image.url}`, error);
     }
   }
-  
+
   return loadedImages;
 }

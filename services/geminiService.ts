@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type, Part } from "@google/genai";
 import { CoachMode, Feedback, UploadedFile } from "../types";
+import { BACKEND_URL } from "../utils/config";
 
 // Centralized model candidates and retry helper to improve resiliency against transient 503s
 const DEFAULT_MODEL_CANDIDATES = [
@@ -244,9 +245,8 @@ export async function getExplanationStrategy(
   const response = await callWithRetry(
     ai,
     async (model) => {
-      // Prefer backend proxy if available via env
-      const apiBase =
-        (typeof window !== "undefined" && (window as any).__AI_PROXY__) || "";
+      // Prefer backend proxy if available
+      const apiBase = BACKEND_URL;
       if (apiBase) {
         const r = await fetch(`${apiBase}/api/ai/generate-content`, {
           method: "POST",

@@ -2,6 +2,7 @@
  * Groq API Service - Replaces Gemini for coaching feedback
  * Uses Groq's API (OpenAI-compatible, FREE tier available)
  */
+import { getApiUrl } from "../utils/config";
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile"; // Fast and capable model
@@ -190,7 +191,7 @@ export async function describeImageWithGrok(
 
     try {
         // Call backend proxy instead of HF API directly (avoids CORS)
-        const BACKEND_URL = "http://localhost:8787/api/huggingface-vision";
+        const BACKEND_URL = getApiUrl("/api/huggingface-vision");
 
         console.log("📤 Sending to backend proxy...");
 

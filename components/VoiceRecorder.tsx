@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { getApiUrl } from '../utils/config';
 import { useTheme } from "../contexts/ThemeContext";
 
 interface VoiceRecorderProps {
@@ -20,21 +21,21 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
         }
       });
-      
+
       streamRef.current = stream;
       chunksRef.current = [];
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm;codecs=opus'
       });
-      
+
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
@@ -70,11 +71,11 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       }
 
       const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
-      
+
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
 
-      const response = await fetch('http://localhost:8787/api/speech/transcribe', {
+      const response = await fetch(getApiUrl('/api/speech/transcribe'), {
         method: 'POST',
         body: formData
       });
@@ -85,7 +86,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       }
 
       const result = await response.json();
-      
+
       if (result.success && result.text) {
         onTranscript(result.text);
       } else {
@@ -121,13 +122,12 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       <button
         onClick={handleClick}
         disabled={disabled || isProcessing}
-        className={`p-2.5 rounded-full transition-all duration-300 ease-in-out hover:scale-105 shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
-          isRecording
+        className={`p-2.5 rounded-full transition-all duration-300 ease-in-out hover:scale-105 shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${isRecording
             ? "bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 animate-pulse"
             : theme === "dark"
-            ? "bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
-            : "bg-gradient-to-br from-blue-400 to-blue-500 hover:from-blue-300 hover:to-blue-400"
-        }`}
+              ? "bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500"
+              : "bg-gradient-to-br from-blue-400 to-blue-500 hover:from-blue-300 hover:to-blue-400"
+          }`}
         aria-label={isProcessing ? "Processing..." : isRecording ? "Stop recording" : "Start voice recording"}
         title={isProcessing ? "Processing..." : isRecording ? "Click to stop" : "Click to speak"}
       >
@@ -159,11 +159,10 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
       </button>
 
       {(isRecording || isProcessing) && (
-        <div className={`absolute top-full mt-2 right-0 px-3 py-2 rounded text-xs whitespace-nowrap z-50 ${
-          theme === "dark"
+        <div className={`absolute top-full mt-2 right-0 px-3 py-2 rounded text-xs whitespace-nowrap z-50 ${theme === "dark"
             ? "bg-blue-900/90 border border-blue-500/30 text-blue-200"
             : "bg-blue-100 border border-blue-400 text-blue-700"
-        }`}>
+          }`}>
           {isProcessing ? "Processing with AssemblyAI..." : "Recording..."}
         </div>
       )}
