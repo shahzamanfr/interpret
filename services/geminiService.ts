@@ -474,9 +474,9 @@ export async function getDebateResponse(
 JSON with:
 - "userStance": What you think the user will argue for
 - "aiStance": Your opposing position
-- "content": Your opening argument (4-6 sentences, natural flow)
+- "content": Your opening argument (2-3 concise sentences, natural flow)
 
-Write 4-6 sentences. Mix sentence lengths. Sound human, not formulaic.`;
+Write 2-3 sentences. Mix sentence lengths. Sound human, not formulaic.`;
 
     const response = await callWithRetry(
       ai,
@@ -555,7 +555,7 @@ Write 4-6 sentences. Mix sentence lengths. Sound human, not formulaic.`;
 - Make them defend every single point
 - Show why their thinking is flawed
 
-Write 4-6 sentences. Be aggressive, logical, and human. FIGHT BACK HARD.`;
+Write 2-3 punchy sentences. Be aggressive, logical, and human. FIGHT BACK HARD.`;
 
     const response = await callWithRetry(
       ai,

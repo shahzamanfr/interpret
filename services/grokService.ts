@@ -419,7 +419,7 @@ Respond in JSON format:
 {
   "userStance": "What you think the user will argue for",
   "aiStance": "Your opposing position",
-  "content": "Your opening argument (3-5 sentences, natural flow)"
+  "content": "Your opening argument (2-3 concise sentences, natural flow)"
 }`;
 
         const messages: GroqMessage[] = [
@@ -444,7 +444,7 @@ Respond in JSON format:
 **Topic:** ${topic}
 **Their Argument:** ${userArgument}
 
-Fight back hard with logic and evidence. Be aggressive, confrontational, and passionate. Use real examples. Challenge everything. 3-5 sentences.`;
+Fight back hard with logic and evidence. Be aggressive, confrontational, and passionate. Use real examples. Challenge everything. 2-3 punchy sentences.`;
 
         const messages: GroqMessage[] = [
             {
