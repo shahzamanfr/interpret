@@ -871,7 +871,27 @@ Your entire output MUST be a single, valid JSON object without any markdown or e
   );
 
   const result = JSON.parse(response.text);
-  console.log("✅ Comprehensive debate evaluation generated");
+
+  // --- SCORE GUARDRAILS ---
+  const categoryScores = result.category_scores || {};
+  const catTotal = Object.values(categoryScores).reduce((sum: number, s: any) => sum + Number(s), 0) as number;
+  const calculatedOverall = Math.round((catTotal / 120) * 100); // 6 categories (0-20 each) = 120 max
+
+  // Clamping inflated holistic scores
+  if (result.overall_score > calculatedOverall + 10) {
+    console.warn(`⚠️ Correcting inflated debate score: ${result.overall_score} → ${calculatedOverall}`);
+    result.overall_score = calculatedOverall;
+    result.score = calculatedOverall;
+  }
+
+  // If all categories are poor, overall must be poor
+  if (catTotal < 30 && result.overall_score > 25) {
+    result.overall_score = 25;
+    result.score = 25;
+  }
+
+  console.log("✅ Comprehensive debate evaluation generated with validated scoring");
+  result.score = result.overall_score;
   return result;
 }
 
@@ -1559,14 +1579,14 @@ export async function getGroupDiscussionResponse(
 **Discussion Topic:** ${topic}
 
 **Your Task:**
-Start the discussion with 1-2 sentences. Be direct and authentic.
+Start the discussion with 1-2 sentences. Be direct and authentic. If the topic is vague, point that out politely but firmly.
 
 **Collaborative Style:**
-- Maximum 2 sentences
-- Be supportive and constructive
-- Share insights or ask helpful questions
-- Build on the topic positively
-- Sound like a helpful colleague
+- Maximum 1-2 sentences
+- Be authentic to your professional persona
+- Share insights or ask challenging questions
+- Do NOT be a generic cheerleader; if an idea lacks substance, your persona should reflect that skepticism.
+- Sound like a high-level professional colleague who expects quality.
 
 **Your Professional Approach:**
 - ${startingAgent.personality === "Analytical Thinker" ? "Focus on data, logic, and evidence. Ask for specifics and challenge vague statements." : ""}
@@ -1625,17 +1645,16 @@ ${historyText}
 
 **Your Task:**
 ${userContribution
-        ? "Respond with 1-2 sentences. Build on good points or offer helpful alternatives to weak ones."
-        : "Continue the discussion with 1-2 sentences. Be collaborative and constructive."
+        ? "Respond with 1-2 sentences. Analyze the user's contribution based on your professional persona. If it's weak, irrelevant, or repetitive, point that out professionally. If it's strong, build on it with specific depth."
+        : "Continue the discussion with 1-2 sentences based on your professional persona."
       }
 
 **Collaborative Style:**
-- Maximum 2 sentences
-- Be supportive and constructive
-- Build on ideas: "That's interesting, and we could also..."
-- Offer alternatives: "Another way to look at it might be..."
-- Ask helpful questions
-- Sound like a supportive colleague
+- Maximum 1-2 sentences
+- Be authentic, not just "supportive". A professional colleague identifies flaws as well as strengths.
+- If the user is being vague, ask for data or examples.
+- Do NOT be a generic cheerleader.
+- Sound like a high-level executive colleague.
 
 **Your Style:**
 ${respondingAgent.personality === "Analytical Thinker" ? "Share relevant data. Ask clarifying questions to help everyone understand better." : ""}
@@ -2788,70 +2807,52 @@ ${discussionText}
 
 1. **Participation & Engagement (0-20):**
    - 0: No participation or completely irrelevant
-   - 1-3: One word, no context, irrelevant to topic
-   - 4-7: Minimal participation, barely contributes
-   - 8-12: Basic participation, some contributions
-   - 13-16: Active participation, meaningful professional contributions
-   - 17-20: Exceptional participation, drives discussion with expertise
+   - 1-3: One word, generic agreement ("I agree"), or filler
+   - 4-7: Minimal contribution, passive presence
+   - 8-12: Basic regular participation
+   - 13-16: Active participation, meaningful unique contributions
+   - 17-20: Exceptional energy, drives the depth of discussion
 
 2. **Communication Clarity (0-20):**
-   - 0: Incomprehensible or no communication
-   - 1-3: Unclear, confusing, irrelevant
-   - 4-7: Basic clarity but weak professional expression
-   - 8-12: Clear enough to understand
-   - 13-16: Clear and professionally expressed
-   - 17-20: Crystal clear, expertly articulated
+   - 0: Incomprehensible
+   - 1-5: Unclear, weak professional expression
+   - 6-12: Clear enough, standard professional tone
+   - 13-20: Expertly articulated, precise, and persuasive
 
 3. **Leadership & Initiative (0-20):**
-   - 0: No initiative whatsoever
-   - 1-3: Completely passive, no leadership
-   - 4-7: Minimal initiative
-   - 8-12: Some initiative shown
-   - 13-16: Good professional leadership when needed
-   - 17-20: Strong executive leadership throughout
+   - 0: Completely passive
+   - 1-5: Follows others, no initiative
+   - 6-11: Occasionally takes the lead or introduces a new sub-topic
+   - 12-16: Summarizes progress, resolves deadlocks, or steers the group effectively
+   - 17-20: Masterful facilitation; proactively manages the group's direction and consensus
 
-4. **Active Listening & Response Quality (0-20):**
-   - 0: Completely ignores others
-   - 1-3: No acknowledgment of others' points
-   - 4-7: Minimal listening, poor responses
-   - 8-12: Basic listening skills
-   - 13-16: Good listening, builds on ideas professionally
-   - 17-20: Exceptional listening, synthesizes and challenges appropriately
+4. **Active Listening (0-20):**
+   - 0: Completely ignores others/context
+   - 1-5: Generic agreement ("Good point") without referencing specific data or names
+   - 6-12: Shows listening by building on the general thread
+   - 13-20: MUST explicitly reference agents by name or quote their specific points to build/challenge. (Elite listening)
 
 5. **Professional Collaboration (0-20):**
-   - 0: Disruptive or no collaboration
-   - 1-3: Dismissive, doesn't collaborate professionally
-   - 4-7: Minimal professional collaboration
-   - 8-12: Basic professional teamwork
-   - 13-16: Good professional collaboration, challenges constructively
-   - 17-20: Excellent professional synergy, elevates discussion quality
+   - 0-5: Dismissive or disruptive
+   - 6-12: Basic teamwork and politeness
+   - 13-20: Constructively challenges weak ideas and builds synergy between conflicting viewpoints
 
 6. **Critical Thinking & Analysis (0-20):**
-   - 0: No thinking demonstrated
-   - 1-3: Superficial, no analysis
-   - 4-7: Very basic thinking
-   - 8-12: Some analysis shown
-   - 13-16: Good critical thinking, challenges weak points
-   - 17-20: Exceptional insights, calls out logical flaws professionally
+   - 0-5: Superficial, obvious observations
+   - 6-12: Moderate analysis
+   - 13-20: Deep insights, identifies logical fallacies in colleagues' points, and provides profound rationale.
 
 **CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
-- Category scores (0-20 each) evaluate specific discussion skills
-- Overall score (0-100) evaluates COMPLETE DISCUSSION PERFORMANCE
-- DO NOT add category scores together
-- DO NOT average category scores
-- DO NOT use category scores to calculate overall score
-- Evaluate overall score separately based on total discussion impact
+- Category scores evaluate specific discussion components.
+- Overall score evaluates TOTAL GROUP IMPACT and QUALITY OF INTERACTION.
+- Generic agreement ("I agree") across several turns should result in an overall_score MAX 35.
+- Real impact requires moving the group forward.
 
-**OVERALL SCORE (0-100) - BRUTALLY ACCURATE:**
-
-**SCORE BASED ON ACTUAL PERFORMANCE:**
-- 0-5: No contribution, irrelevant word, or disruptive
-- 6-15: One word with minimal relevance, no real contribution
-- 16-30: Minimal participation, very poor skills
-- 31-50: Basic participation, some skills shown
-- 51-70: Good participation, solid skills
-- 71-85: Strong participation, excellent skills
-- 86-100: Exceptional leadership and insight
+**SCORING PHILOSOPHY:**
+- 0-35: Passenger / Passive participant
+- 36-60: Standard professional contributor
+- 61-80: High-impact facilitator / Key analyst
+- 81-100: Exceptional group leader / Strategic visionary (Rare)
 
 **CRITICAL: BE BRUTALLY HONEST ABOUT PROFESSIONAL PERFORMANCE**
 - Irrelevant word = 0-2 points maximum

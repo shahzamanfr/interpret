@@ -659,20 +659,21 @@ export async function scoreIndividualGroupDiscussionMessageWithGroq(
     const systemPrompt = `You are a BRUTALLY HONEST group discussion coach and expert psychologist.Analyze a SINGLE contribution within its context.
 
 ** EVALUATION CRITERIA(0 - 20 each):**
-    1. Participation & Engagement: Energy, relevance, and frequency of contribution.
-2. Communication Clarity: Precision of language, professional tone, and articulation.
-3. Leadership & Initiative: Taking charge, steering the discussion, or introducing new, valuable perspectives.
-4. Active Listening: DIRECTLY referencing or building upon the points made in the preceding context.Penalize generic responses that ignore previous speakers.
-5. Professional Collaboration: Encouraging others, finding common ground, or constructively challenging ideas.
-6. Critical Thinking: Depth of analysis, logical reasoning, and providing evidence or rationale.
+1. Participation & Engagement: Energy, relevance, and value of the contribution. Passive existence is NOT engagement.
+2. Communication Clarity: Precision of language and professional tone.
+3. Leadership & Initiative: Taking charge, steering the group, resolving deadlocks, or introduces new, valuable perspectives. Summarizing others' points is a key leadership trait.
+4. Active Listening: MUST explicitly reference or build upon specific points made by others in the context. Generic agreement (e.g., "I agree with Sarah") without adding "why" or "how" gets 0-3 points.
+5. Professional Collaboration: Finding common ground or constructively challenging ideas.
+6. Critical Thinking: Depth of analysis. Calling out logical flaws in others' arguments is highly rewarded.
 
 **MANDATORY RELEVANCE & CONTEXT CHECK:**
 Before scoring, you MUST verify if the 'CURRENT USER MESSAGE' actually addresses the 'TOPIC' and relates to the 'PRECEDING DISCUSSION CONTEXT'.
 1. If the contribution is irrelevant, garbage, nonsense, or completely unrelated to the topic:
    - YOU MUST AWARD ZERO (0) for ALL category scores and the overallPerformance.
    - The 'critique' MUST explicitly state that the contribution is irrelevant.
-2. If the contribution is extremely shallow (e.g., "Yes," "I agree," "Ok"):
+2. If the contribution is extremely shallow or a generic "I agree" / "Ok" / "Correct":
    - AWARD a maximum overallPerformance of 10.
+   - Listening score MUST be max 3.
 
 ** STRICT SCORING PHILOSOPHY (0-100 total):**
 - 0-20: Meaningless filler (e.g., "I agree", "Cool idea").
@@ -862,6 +863,17 @@ CRITICAL: Start with { and end with }.No extra text.`;
 
     try {
         const result = extractJson(finalResponse);
+
+        // --- SCORE GUARDRAILS ---
+        const categoryScores = result.category_scores || {};
+        const catTotal = Object.values(categoryScores).reduce((sum: number, s: any) => sum + Number(s), 0) as number;
+        const calculatedOverall = Math.round((catTotal / 100) * 100); // 5 categories (0-20 each) = 100 max
+
+        // Clamping inflated holistic scores
+        if (result.overall_score > calculatedOverall + 12) {
+            result.overall_score = calculatedOverall + 5;
+        }
+
         // Ensure legacy score property matches overall_score
         result.score = result.overall_score;
         result.messageBreakdown = messageScores;
@@ -924,7 +936,7 @@ ${userContribution ? `User's Latest: ${userContribution}` : 'Continue the discus
 Recent Context:
 ${historyText}
 
-Respond with 1 - 2 sentences.Be collaborative and constructive.`;
+Respond with 1-2 sentences. Be authentic to your personality. React naturally to the user's contribution—if it's weak, irrelevant, or adds no value, your personality should reflect that (e.g., an 'Analytical Thinker' might call out the lack of logic, while a 'Practical Realist' might question its feasibility). Do NOT be a cheerleader for poor ideas.`;
 
         const messages: GroqMessage[] = [
             { role: 'system', content: systemPrompt },
@@ -1000,15 +1012,15 @@ Critique: ${m.critique}`).join("\n\n")
         }
 
 ** STRICT EVALUATION MANDATE:**
-- ** Participation **: Is the user active or just a passenger ? One - liners are a failure.
-- ** Listening **: Does the user build on specific points from others ? Or are they just waiting for their turn to speak ?
-- ** Leadership **: Did they steer the group ? Did they resolve conflicts or summarize progress ?
-- ** Insight **: Is their contribution adding value or just stating the obvious ?
+- **Participation**: Is the user active or just a passenger? One-liners and generic agreement are failures.
+- **Listening**: Does the user build on specific points from others? Do they use names? Do they synthesize multiple viewpoints?
+- **Leadership**: Did they steer the group? Did they resolve conflicts, summarize progress, or help the group reach a consensus?
+- **Insight**: Is their contribution adding unique value or just stating the obvious?
 
     Respond ONLY with valid JSON:
     {
         "role": "Group Discussion",
-        "overall_score": <independent holistic score 0-100>,
+        "overall_score": <independent holistic score 0-100 reflecting group impact>,
         "category_scores": {
             "participation": <0-20>,
             "communication": <0-20>,
@@ -1017,29 +1029,29 @@ Critique: ${m.critique}`).join("\n\n")
             "collaboration": <0-20>,
             "criticalThinking": <0-20>
         },
-        "feedback": "<comprehensive analysis>",
-            "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-                "score": <same as overall_score >,
-                    "whatYouDidWell": "<strengths>",
-                        "areasForImprovement": "<weaknesses>",
-                            "personalizedTip": "<priority tip>",
-                                "spokenResponse": "<1-sentence summary>",
-                                    "communicationBehavior": {
+        "feedback": "<detailed analysis of their role and impact on the group dynamic>",
+        "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
+        "score": <same as overall_score>,
+        "whatYouDidWell": "<key professional strengths>",
+        "areasForImprovement": "<key professional weaknesses>",
+        "personalizedTip": "<highest priority improvement>",
+        "spokenResponse": "<1-sentence summary of performance>",
+        "communicationBehavior": {
             "profile": "<3 words>",
-                "strength": "<1 sentence>",
-                    "growthArea": "<1 sentence>"
+            "strength": "<1 sentence>",
+            "growthArea": "<1 sentence>"
         },
         "exampleRewrite": {
-            "original": "<pick poor message>",
-                "improved": "<make it elite>",
-                    "reasoning": "<why>"
+            "original": "<pick a weak message>",
+            "improved": "<rewrite it to be high-impact>",
+            "reasoning": "<why this version is better>"
         },
         "groupDiscussionAnalysis": {
-            "strongestContribution": "<copy from history>",
-                "weakestContribution": "<copy from history>",
-                    "bestInteraction": "<analysis>",
-                        "missedOpportunities": "<analysis>",
-                            "groupDynamics": "<analysis>"
+            "strongestContribution": "<specific quote>",
+            "weakestContribution": "<specific quote>",
+            "bestInteraction": "<analysis of how they interacted with a specific agent>",
+            "missedOpportunities": "<where they could have led or challenged but didn't>",
+            "groupDynamics": "<analysis of their social position in the group (Leader, Follower, Facilitator, Challenger)>"
         }
     }
 
@@ -1054,6 +1066,33 @@ CRITICAL: Score each category out of 20 independently.Provide a separate, indepe
 
     try {
         const result = extractJson(finalResponse);
+
+        // --- SCORE GUARDRAILS (Ensures accuracy against per-message scoring) ---
+        const categoryScores = result.category_scores || {};
+        const catTotal = Object.values(categoryScores).reduce((sum: number, s: any) => sum + Number(s), 0) as number;
+        const catAvg = catTotal / 6;
+        const calculatedOverall = Math.round((catTotal / 120) * 100);
+
+        // If AI gave inflated score, correct it
+        if (result.overall_score > calculatedOverall + 10) {
+            result.overall_score = calculatedOverall;
+        }
+
+        // Penalty for passenger behavior (low avg score)
+        if (catAvg < 8 && result.overall_score > 30) {
+            result.overall_score = Math.min(30, calculatedOverall);
+        }
+
+        // Minimal contribution cap
+        if (catTotal < 20 && result.overall_score > 15) {
+            result.overall_score = 15;
+        }
+
+        // Ensure overall_score is never zero if there was actually valid (even if weak) effort,
+        // UNLESS the AI explicitly chose 0 for irrelevance.
+        if (result.overall_score === 0 && catTotal > 10 && !result.feedback.toLowerCase().includes("irrelevant")) {
+            result.overall_score = 10;
+        }
 
         // Ensure legacy score property matches overall_score
         result.score = result.overall_score;
