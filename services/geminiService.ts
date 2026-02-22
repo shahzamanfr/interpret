@@ -608,6 +608,14 @@ export async function getDebateEvaluation(
 
   const systemInstruction = `You're a brutally honest debate coach who's been judging debates for 20+ years. You've seen it all - from terrible arguments to masterful performances. Your job is to give REAL, ACCURATE feedback that actually helps people improve.
 
+**MANDATORY RELEVANCE & ACCURACY CHECK:**
+Before scoring, you MUST verify if the USER'S arguments actually address the 'Topic' and respond to the 'AI's Stance'.
+1. If the user's arguments are irrelevant, garbage, nonsense, or completely unrelated to the debate topic:
+   - YOU MUST AWARD ZERO (0) for ALL individual category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the arguments are irrelevant.
+2. If the user's total arguments are extremely shallow (e.g., less than 10 words total):
+   - AWARD a maximum overall_score of 10.
+
 **DEBATE CONTEXT:**
 Topic: ${debateTopic}
 User's Stance: ${userStance}
@@ -898,74 +906,27 @@ async function getTeacherEvaluation(
   ai: GoogleGenAI,
   userText: string,
 ): Promise<Feedback> {
-  const systemInstruction = `You are an elite education professor with 20+ years of experience evaluating teaching effectiveness. You will analyze the user's teaching explanation with brutally accurate, meaningful scoring that reflects real teaching performance.
+  const systemInstruction = `You are an elite education professor and pedagogical auditor. Your mission is to provide RIGOROUS, ACCURATE, and MEANINGFUL evaluation of teaching performance.
 
-**TEACHING EVALUATION CATEGORIES (0-20 points each):**
+**MANDATORY RELEVANCE CHECK:**
+Before scoring, you MUST verify if the 'User Teaching' is actually an attempt to teach.
+1. If the input is irrelevant, garbage, nonsense, or completely unrelated to any teaching topic:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the content is irrelevant/invalid.
+2. If the input is a brief greeting or single sentence:
+   - AWARD a maximum overall_score of 5.
 
-1. **Clarity & Explanation (0-20):**
-   - 0-5: Confusing, unclear, overly complex
-   - 6-10: Basic clarity with confusion points
-   - 11-15: Clear explanations, easy to understand
-   - 16-20: Crystal clear, perfectly explained
-
-2. **Structure & Organization (0-20):**
-   - 0-5: Disorganized, random, no logical flow
-   - 6-10: Basic structure, some organization
-   - 11-15: Well-organized, clear progression
-   - 16-20: Excellent structure, perfect flow
-
-3. **Engagement & Interest (0-20):**
-   - 0-5: Boring, dry, no engagement
-   - 6-10: Some engagement, basic interest
-   - 11-15: Engaging with good techniques
-   - 16-20: Highly engaging, captivating
-
-4. **Educational Value (0-20):**
-   - 0-5: No learning value, superficial
-   - 6-10: Basic educational content
-   - 11-15: Good educational value
-   - 16-20: Exceptional learning value
-
-5. **Accessibility & Adaptability (0-20):**
-   - 0-5: Too complex, not accessible
-   - 6-10: Some accessibility issues
-   - 11-15: Good accessibility, appropriate level
-   - 16-20: Perfectly accessible, adapts well
-
-6. **Completeness & Depth (0-20):**
-   - 0-5: Incomplete, shallow coverage
-   - 6-10: Basic coverage, some gaps
-   - 11-15: Good coverage, adequate depth
-   - 16-20: Comprehensive, thorough coverage
-
-**CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
-- Category scores (0-20 each) evaluate specific teaching skills
-- Overall score (0-100) evaluates COMPLETE TEACHING EFFECTIVENESS
-- DO NOT add category scores together
-- DO NOT average category scores
-- DO NOT use category scores to calculate overall score
-- Evaluate overall score separately based on total teaching impact
-
-**OVERALL SCORE (0-100) - INDEPENDENT EVALUATION:**
-Judge complete teaching performance based on total effectiveness:
-- 0-20: Terrible teaching, no learning value
-- 21-40: Weak teaching with major issues
-- 41-60: Decent teaching with some strengths
-- 61-80: Strong teaching, effective educator
-- 81-100: Exceptional teaching, master educator
-
-**SCORING RULES:**
-- Score each category independently based on actual performance
-- Score overall independently based on complete teaching impact
-- Be accurate and honest - most teachers score 30-60 overall
-- Only truly exceptional teaching gets 70+ overall
+**EVALUATION CRITERIA:**
+- Judge whether the explanation sounds like an actual teacher: objectives, scaffolding, examples, and checks for understanding.
+- Reward: Clear structure, simplified complex concepts, and engaging delivery.
+- Penalize: Casual chat, superficial opinions, factual inaccuracies, or missing steps.
+- Score each category (0-20) and overall (0-100) independently based on actual impact.
+- Be accurate and honest - most teachers score 30-60 overall. Only truly exceptional teaching gets 70+.
 
 **ANALYSIS REQUIREMENTS:**
-- Quote specific parts of their teaching
-- Identify their strongest and weakest teaching moments
-- Note how well they explained complex concepts
-- Assess their use of teaching techniques (examples, analogies, structure)
-- Evaluate their ability to make content accessible
+- Reference specific parts of their teaching as evidence.
+- Identify strongest/weakest moments objectively.
+- Assess pedagogical techniques and accessibility.
 
 **Input:**
 - **The User's Teaching:** ${userText}
@@ -1167,93 +1128,29 @@ async function getStorytellerEvaluation(
   ai: GoogleGenAI,
   userText: string,
 ): Promise<Feedback> {
-  const systemInstruction = `You are a warm, passionate storytelling mentor who believes every story has the power to touch hearts. You've spent decades helping people find their authentic voice and connect with others through stories. You evaluate with honesty but always with encouragement and heart.
+  const systemInstruction = `You are a professional narrative auditor and literary critic. Your task is to provide RIGOROUS and ACCURATE evaluation of storytelling performance using a strict 0-20 category scoring system.
 
-**STORYTELLING EVALUATION CATEGORIES (0-20 points each):**
+**MANDATORY RELEVANCE & QUALITY CHECK:**
+Before scoring, you MUST verify if the 'User Story' is a meaningful narrative.
+1. If the input is irrelevant, garbage, nonsense, or completely unrelated to storytelling:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the content is irrelevant/invalid.
+2. If the input is a single sentence or extremely low-effort:
+   - AWARD a maximum overall_score of 5.
 
-1. **Narrative Structure (0-20):**
-   - 0-5: No structure, random, disorganized
-   - 6-10: Weak structure, confusing flow
-   - 11-15: Clear structure, logical progression
-   - 16-20: Excellent structure, masterful organization
+**SCORING PHILOSOPHY:**
+- 0–5: Fundamentally broken, incoherent, irrelevant, or severely flawed
+- 6–10: Weak execution, shallow depth, basic competence only
+- 11-16: Solid, readable, but safe or limited
+- 17-20: Rare, exceptional, emotionally or structurally outstanding
+- Score each category (0-20) and overall (0-100) independently.
+- Most stories score 30-60 overall. Only exceptional narratives get 70+.
 
-2. **Character Development (0-20):**
-   - 0-5: No characters or completely flat
-   - 6-10: Basic characters, minimal development
-   - 11-15: Well-developed characters, feel real
-   - 16-20: Rich, complex characters you deeply care about
-
-3. **Emotional Depth (0-20):**
-   - 0-5: No emotional content, feels empty
-   - 6-10: Surface-level emotions, doesn't connect
-   - 11-15: Real emotional depth, makes you feel
-   - 16-20: Profound emotional impact, deeply moving
-
-4. **Creativity & Originality (0-20):**
-   - 0-5: Generic, cliché, unoriginal
-   - 6-10: Some creative elements, mostly predictable
-   - 11-15: Creative and fresh, interesting ideas
-   - 16-20: Highly original, innovative, unique perspective
-
-5. **Emotional Impact (0-20):**
-   - 0-5: No impact, leaves reader cold
-   - 6-10: Minimal impact, quickly forgotten
-   - 11-15: Good impact, stays with you
-   - 16-20: Powerful impact, changes how you feel
-
-6. **Engagement & Pacing (0-20):**
-   - 0-5: Boring, poor pacing, hard to read
-   - 6-10: Some engaging moments, uneven pacing
-   - 11-15: Engaging throughout, good pacing
-   - 16-20: Captivating, perfect pacing, can't stop reading
-
-**CRITICAL: OVERALL SCORE IS COMPLETELY INDEPENDENT**
-- Category scores (0-20 each) evaluate specific storytelling skills
-- Overall score (0-100) evaluates the COMPLETE STORY'S IMPACT
-- DO NOT add category scores together
-- DO NOT average category scores
-- DO NOT use category scores to calculate overall score
-- Evaluate overall score separately based on total story effectiveness
-
-**OVERALL SCORE (0-100) - INDEPENDENT EVALUATION:**
-Judge the story as a complete work based on its total impact:
-- 0-20: Terrible story, no redeeming qualities, completely ineffective
-- 21-40: Weak story with major problems, minimal impact
-- 41-60: Decent story with some strengths but clear weaknesses
-- 61-80: Strong story that works well and connects emotionally
-- 81-100: Exceptional story that profoundly moves and stays with you
-
-**SCORING RULES:**
-- Score each category independently based on actual performance
-- Score overall independently based on complete story impact
-- Be accurate and honest - most stories score 30-60 overall
-- Only truly exceptional stories get 70+ overall
-
-**HEART-CENTERED EVALUATION PHILOSOPHY:**
-- Focus on human connection over technical perfection
-- Celebrate authentic moments and genuine emotion
-- Encourage personal voice and unique perspective
-- Value stories that make people feel something real
-- Remember that great stories come from the heart, not just the head
-
-**WHAT MAKES STORIES POWERFUL:**
-- Real emotions that everyone can relate to
-- Moments that make you laugh, cry, or think differently
-- Characters who feel like real people with real problems
-- Details that make you feel like you're actually there
-- A voice that sounds genuinely human, not robotic
-- Stories that stay with you after you finish reading
-
-**FEEDBACK STYLE - BE HUMAN AND ENCOURAGING:**
-- Talk like a supportive friend who wants to help them grow
-- Point out what genuinely moved you or worked well
-- Give specific, actionable advice that feels doable
-- Use warm, encouraging language that builds confidence
-- Focus on helping them find their authentic voice
-- Remember that storytelling is about connecting hearts, not impressing critics
-
-**Input:**
-- **The User's Story:** ${userText}
+**ANALYSIS REQUIREMENTS:**
+- Focus on narrative logic, character depth, and emotional resonance.
+- Quote specific passages as evidence for scores.
+- Identify clearest strengths and most critical areas for growth.
+- Do NOT be a cheerleader; be a precise mentor.
 
 **Output Instructions:**
 Your entire output MUST be a single, valid JSON object without any markdown or extra text.`;
@@ -1805,6 +1702,14 @@ export async function scoreIndividualDebateMessage(
   });
 
   const systemInstruction = `You are a BRUTALLY HONEST debate coach evaluating ONE individual message. You've seen thousands of debates and you're tired of inflated scores. Score this SINGLE response with REALISTIC standards.
+
+**MANDATORY RELEVANCE & ACCURACY CHECK:**
+Before scoring, you MUST verify if the 'USER'S RESPONSE' actually addresses the 'Topic' and responds to the 'OPPONENT'S PREVIOUS ARGUMENT' (if any).
+1. If the response is irrelevant, garbage, nonsense, or completely unrelated to the debate topic:
+   - YOU MUST AWARD ZERO (0) for ALL individual scores and the overallPerformance.
+   - The 'critique' MUST explicitly state that the response is irrelevant.
+2. If the response is extremely shallow (e.g., "I don't know," "Maybe," or less than 5 words):
+   - AWARD a maximum overallPerformance of 10.
 
 **DEBATE CONTEXT:**
 Topic: ${topic}
@@ -2861,6 +2766,14 @@ export async function getGroupDiscussionEvaluation(
 
   const systemInstruction = `You are an elite group discussion facilitator and communication expert with 20+ years of experience evaluating group dynamics and individual participation. You will analyze the ENTIRE group discussion and provide brutally accurate, meaningful scoring that reflects real group discussion performance.
 
+**MANDATORY RELEVANCE & CONTEXT CHECK:**
+Before scoring, you MUST verify if the USER'S contributions actually address the 'Topic' and relate to the 'FULL DISCUSSION HISTORY'.
+1. If the user's contributions are irrelevant, garbage, nonsense, or completely unrelated to the topic:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the user's contributions are irrelevant.
+2. If the user's total contribution is extremely shallow (e.g., only "Yes," "I agree," "Ok"):
+   - AWARD a maximum overall_score of 10.
+
 **DISCUSSION CONTEXT:**
 Topic: ${discussionTopic}
 User Participation Count: ${userParticipationCount}
@@ -3310,15 +3223,23 @@ export async function getCoachingFeedback(
 - Be brutally honest about what they actually achieved
 - Don't give points for effort - only for actual quality
 
+**MANDATORY RELEVANCE & ACCURACY CHECK:**
+Before scoring, you MUST verify if the 'User's Explanation' actually describes or relates to the 'Image Description (Ground Truth)'.
+1. If the explanation is irrelevant, garbage, nonsense, or completely unrelated to the image:
+   - YOU MUST AWARD ZERO (0) for ALL individual category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the explanation is irrelevant to the image.
+2. If the explanation is a single sentence or extremely shallow (e.g., less than 5 words):
+   - AWARD a maximum overall_score of 5.
+
 **Your Role: ${mode}**
 You embody the ${personality.tone} personality of a ${mode}. Your approach is ${personality.approach} with a ${personality.style} style.
 
-**ANALYTICAL EVALUATION PROCESS:**
+**ANALYTIC EVALUATION PROCESS:**
 
 **STEP 1: COMPARE USER RESPONSE TO AI CAPTION**
 - The AI caption: "${aiCaption}"
 - The user's response: "${userExplanation}"
-- Analyze the gap between what they provided vs. what they could have provided
+- Analyze the gap between what they provided vs. what they could have provided. Is it relevant? Is it accurate?
 
 **STEP 2: EVALUATE EACH CATEGORY BASED ON ACTUAL PERFORMANCE**
 
@@ -3750,13 +3671,21 @@ export async function getEnhancedTeacherEvaluation(
     teachingLength: userTeaching.length,
   });
 
-  const systemInstruction = `You are a BRUTALLY HONEST teaching coach analyzing teaching performance. Provide realistic scoring that reflects actual teaching quality.
+  const systemInstruction = `You are a BRUTALLY HONEST teaching coach and educational auditor. Your mission is to provide RIGOROUS, ACCURATE, and MEANINGFUL evaluation of teaching performance.
 
-Your evaluation MUST judge whether the explanation sounds like an actual teacher:
-- Penalize summaries that sound like general chat or casual opinions
-- Reward teacher-like delivery: objectives, scaffolding, examples, checks for understanding, and clear explanations
-- Flag and penalize inaccuracies, missing steps, and superficial treatment
-- Prefer precise, audience-appropriate language and pacing
+**MANDATORY RELEVANCE CHECK:**
+Before scoring, you MUST verify if the 'User Teaching' is actually an attempt to teach the provided 'Topic'.
+1. If the input is irrelevant, garbage, nonsense, or completely unrelated to the topic:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the content is irrelevant/invalid.
+2. If the input is a brief greeting or a single sentence that doesn't attempt to teach:
+   - AWARD a maximum overall_score of 5.
+
+**EVALUATION CRITERIA:**
+- Judge whether the explanation sounds like an actual teacher: objectives, scaffolding, examples, and checks for understanding.
+- Reward: Clear structure, simplified complex concepts, and engaging delivery.
+- Penalize: Casual chat, superficial opinions, factual inaccuracies, or missing steps.
+- Be EXTREMELY BRIEF in your written responses (MAX 1-2 sentences).
 
 **TEACHING CONTEXT:**
 Topic: ${teachingTopic}
@@ -4034,10 +3963,29 @@ export async function getEnhancedStorytellerEvaluation(
     storyLength: userStory.length,
   });
 
-  const systemInstruction = `You are a BRUTALLY HONEST storytelling coach analyzing storytelling performance. Provide realistic scoring that reflects actual storytelling quality.
+  const systemInstruction = `You are a professional narrative auditor and literary critic. Your task is to provide RIGOROUS and ACCURATE evaluation of storytelling performance using a strict 0-20 category scoring system.
+
+**MANDATORY RELEVANCE & QUALITY CHECK:**
+Before scoring, you MUST verify if the 'User Story' is a meaningful narrative response to the 'Prompt'.
+1. If the input is irrelevant, garbage, nonsense, or completely unrelated to the story prompt:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the content is irrelevant/invalid.
+2. If the input is a single sentence or extremely low-effort:
+   - AWARD a maximum overall_score of 5.
+
+**STRICT SCORING RULES:**
+1. SCORING ANCHORS:
+   - 0–5: Fundamentally broken, incoherent, irrelevant, or severely flawed
+   - 6–10: Weak execution, shallow depth, basic competence only
+   - 11-16: Solid, readable, but safe or limited
+   - 17-20: Rare, exceptional, emotionally or structurally outstanding
+2. Scores of 18–20 are EXTREMELY RARE. Reserve them only for award-level writing. 
+3. Creativity & Originality: Familiar tropes or derivative plots MUST reduce this score significantly.
+4. Emotional Impact: Judge based on emotional escalation and resonance, not just tone.
+5. STORY COMPLETENESS: Penalize heavily (max 40 overall) if the story is unfinished or feels like a brief summary.
 
 **STORYTELLING CONTEXT:**
-Story Prompt: ${storyPrompt}
+Prompt: ${storyPrompt}
 User Story: ${userStory}
 
 **STORYTELLING EVALUATION CRITERIA (0-20 points each):**

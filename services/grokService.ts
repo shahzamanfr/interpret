@@ -259,48 +259,29 @@ export async function getCoachingFeedbackWithGroq(
 ): Promise<any> {
     console.log("🤖 Using Grok for coaching feedback...");
 
-    const systemPrompt = `You are an expert communication coach. Analyze the user's explanation of an image and provide detailed feedback.
+    const systemPrompt = `You are an elite communication coach and auditor. Your mission is to provide RIGOROUS, ACCURATE, and MEANINGFUL evaluation of a user's explanation of an image.
 
-**Image Description (AI-generated):** ${aiCaption}
+**MANDATORY RELEVANCE & ACCURACY CHECK:**
+Before scoring, you MUST verify if the 'User's Explanation' actually describes or relates to the 'Image Description (AI-generated)'.
+1. If the explanation is irrelevant, garbage, nonsense, or completely unrelated to the image:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the explanation is irrelevant to the image.
+2. If the explanation is a single sentence or extremely shallow:
+   - AWARD a maximum overall_score of 5.
 
-**User's Explanation:** ${userExplanation}
+**SCORING PHILOSOPHY:**
+- Score based on ACTUAL performance, not potential or effort.
+- Most explanations score 30-50 overall. Only exceptional ones get 70+.
+- Category scores (0-20 each) and overall_score (0-100) MUST be independent.
+- Be BRUTALLY HONEST and constructive.
 
-**Coaching Mode:** ${coachMode}
-
+**IMAGE CONTEXT:**
+- **Image Description (AI-generated):** ${aiCaption}
+- **User's Explanation:** ${userExplanation}
+- **Coaching Mode:** ${coachMode}
 ${explanationStrategy ? `**Strategy Suggestion:** ${explanationStrategy}` : ""}
 
-Provide feedback in the following JSON format:
-{
-  "role": "${coachMode}",
-  "overall_score": <number 0-100, independent holistic judgment>,
-  "category_scores": {
-    "clarity": <0-20>,
-    "vocabulary": <0-20>,
-    "grammar": <0-20>,
-    "logic": <0-20>,
-    "fluency": <0-20>,
-    "creativity": <0-20>
-  },
-  "feedback": "<detailed paragraph feedback>",
-  "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-  "whatYouDidWell": "<brief sentence>",
-  "areasForImprovement": "<brief sentence>",
-  "personalizedTip": "<brief sentence>",
-  "spokenResponse": "<brief sentence>",
-  "communicationBehavior": {
-    "profile": "<3 words max>",
-    "strength": "<brief sentence>",
-    "growthArea": "<brief sentence>"
-  },
-  "exampleRewrite": {
-    "original": "<quote from user's explanation>",
-    "improved": "<improved version>",
-    "reasoning": "<why the improvement is better>"
-  }
-}
-
-CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100 based on the whole performance. Do NOT derive overall_score mathematically from categories.
-Be honest and constructive. Score based on actual performance.`;
+Respond ONLY with valid JSON.`;
 
     const messages: GroqMessage[] = [
         {
@@ -337,17 +318,17 @@ export async function refineScenarioForTeachingWithGroq(
     apiKey: string | string[],
     userScenario: string
 ): Promise<string> {
-    const systemPrompt = `You are an expert educational content organizer. Transform the user's raw scenario into a clear, structured, and teachable format.
+    const systemPrompt = `You are an expert educational content organizer.Transform the user's raw scenario into a clear, structured, and teachable format.
 
-**User's Scenario:** ${userScenario}
+        ** User's Scenario:** ${userScenario}
 
 Create a refined scenario that includes:
-- A clear title/topic
-- The main concept explained simply
-- Key points or steps to cover
-- Context or examples if helpful
+    - A clear title / topic
+        - The main concept explained simply
+            - Key points or steps to cover
+                - Context or examples if helpful
 
-Keep it concise (2-3 paragraphs maximum).`;
+Keep it concise(2 - 3 paragraphs maximum).`;
 
     const messages: GroqMessage[] = [
         {
@@ -372,17 +353,17 @@ export async function refineScenarioForStorytellingWithGroq(
     apiKey: string | string[],
     userScenario: string
 ): Promise<string> {
-    const systemPrompt = `You are a master storyteller. Transform the user's idea into an engaging story prompt that stays strictly on-topic.
+    const systemPrompt = `You are a master storyteller.Transform the user's idea into an engaging story prompt that stays strictly on-topic.
 
-**User's Idea:** ${userScenario}
+        ** User's Idea:** ${userScenario}
 
 Create a vivid, engaging story prompt that:
-- Stays tightly focused on the user's topic
-- Adds depth and atmosphere that matches the topic
-- Suggests realistic conflict/tension
-- Keeps it open-ended but focused
+    - Stays tightly focused on the user's topic
+        - Adds depth and atmosphere that matches the topic
+            - Suggests realistic conflict / tension
+                - Keeps it open - ended but focused
 
-No meta commentary. No headings. No bullets. Output only the prompt.`;
+No meta commentary.No headings.No bullets.Output only the prompt.`;
 
     const messages: GroqMessage[] = [
         {
@@ -411,16 +392,16 @@ export async function getDebateResponseWithGroq(
     isInitialStance: boolean
 ): Promise<{ content: string; aiStance: string; userStance: string }> {
     if (isInitialStance) {
-        const systemPrompt = `You're debating someone. Figure out what side they'll take on this topic, then argue the opposite side. Talk like a real human having a debate.
+        const systemPrompt = `You're debating someone. Figure out what side they'll take on this topic, then argue the opposite side.Talk like a real human having a debate.
 
-**Topic:** ${topic}
+** Topic:** ${topic}
 
-Respond in JSON format:
-{
-  "userStance": "What you think the user will argue for",
-  "aiStance": "Your opposing position",
-  "content": "Your opening argument (2-3 concise sentences, natural flow)"
-}`;
+    Respond in JSON format:
+    {
+        "userStance": "What you think the user will argue for",
+            "aiStance": "Your opposing position",
+                "content": "Your opening argument (2-3 concise sentences, natural flow)"
+    } `;
 
         const messages: GroqMessage[] = [
             {
@@ -441,10 +422,10 @@ Respond in JSON format:
     } else {
         const systemPrompt = `You're a fierce debater fighting for your position.
 
-**Topic:** ${topic}
-**Their Argument:** ${userArgument}
+        ** Topic:** ${topic}
+** Their Argument:** ${userArgument}
 
-Fight back hard with logic and evidence. Be aggressive, confrontational, and passionate. Use real examples. Challenge everything. 2-3 punchy sentences.`;
+Fight back hard with logic and evidence.Be aggressive, confrontational, and passionate.Use real examples.Challenge everything. 2 - 3 punchy sentences.`;
 
         const messages: GroqMessage[] = [
             {
@@ -482,42 +463,42 @@ export async function getDebateEvaluationWithGroq(
     const conversationText = conversationHistory
         .map(
             (msg) =>
-                `${msg.type === "user" ? "USER" : "AI"} (Turn ${msg.turnNumber}): ${msg.content}`
+                `${msg.type === "user" ? "USER" : "AI"} (Turn ${msg.turnNumber}): ${msg.content} `
         )
         .join("\n\n");
 
-    const systemPrompt = `You are a debate coach. You MUST respond with ONLY valid JSON, no other text.
+    const systemPrompt = `You are a debate coach.You MUST respond with ONLY valid JSON, no other text.
 
-Topic: ${debateTopic}
+        Topic: ${debateTopic}
 User's Stance: ${userStance}
 AI's Stance: ${aiStance}
 
-Conversation:
+    Conversation:
 ${conversationText}
 
-Output ONLY this JSON structure (no markdown, no explanations):
-{
-  "role": "Debater",
-  "overall_score": <independent holistic score 0-100>,
-  "category_scores": {
-    "argumentStrength": <0-20>,
-    "evidenceSupport": <0-20>,
-    "logicalReasoning": <0-20>,
-    "rebuttalEffectiveness": <0-20>,
-    "persuasionImpact": <0-20>,
-    "engagementResponsiveness": <0-20>
+Output ONLY this JSON structure(no markdown, no explanations):
+    {
+        "role": "Debater",
+            "overall_score": <independent holistic score 0 - 100 >,
+                "category_scores": {
+            "argumentStrength": <0-20 >,
+                "evidenceSupport": <0-20 >,
+                    "logicalReasoning": <0-20 >,
+                        "rebuttalEffectiveness": <0-20 >,
+                            "persuasionImpact": <0-20 >,
+                                "engagementResponsiveness": <0-20 >
   },
-  "feedback": "<comprehensive analysis>",
-  "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-  "score": <same as overall_score>,
-  "whatYouDidWell": "<strengths>",
-  "areasForImprovement": "<weaknesses>",
-  "personalizedTip": "<most important tip>",
-  "spokenResponse": "<brief 1-sentence summary>"
-}
+        "feedback": "<comprehensive analysis>",
+            "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
+                "score": <same as overall_score >,
+                    "whatYouDidWell": "<strengths>",
+                        "areasForImprovement": "<weaknesses>",
+                            "personalizedTip": "<most important tip>",
+                                "spokenResponse": "<brief 1-sentence summary>"
+    }
 
-CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100 based on the whole performance. Do NOT sum or average category scores to get the overall_score.
-Start with { and end with }. No extra text.`;
+    CRITICAL: Score each category out of 20 independently.Provide a separate, independent overall_score out of 100 based on the whole performance.Do NOT sum or average category scores to get the overall_score.
+Start with { and end with }.No extra text.`;
 
     const messages: GroqMessage[] = [
         {
@@ -566,38 +547,46 @@ export async function scoreIndividualDebateMessageWithGroq(
     overallPerformance: number;
     critique: string;
 }> {
-    const systemPrompt = `You are a BRUTALLY HONEST debate coach evaluating ONE individual message. Score this SINGLE response with REALISTIC standards.
+    const systemPrompt = `You are a BRUTALLY HONEST debate coach evaluating ONE individual message.Score this SINGLE response with REALISTIC standards.
 
-**DEBATE CONTEXT:**
-Topic: ${topic}
+** DEBATE CONTEXT:**
+        Topic: ${topic}
 Message Number: ${messageNumber}
 
-**OPPONENT'S PREVIOUS ARGUMENT:**
+** OPPONENT'S PREVIOUS ARGUMENT:**
 ${opponentMessage}
 
-**USER'S RESPONSE TO EVALUATE:**
-"${userMessage}"
+** USER'S RESPONSE TO EVALUATE:**
+    "${userMessage}"
 
 Provide a detailed evaluation in JSON format:
 {
-  "messageNumber": ${messageNumber},
-  "messageContent": "${userMessage.replace(/"/g, '\\"')}",
-  "scores": {
-    "logicReasoning": <0-20>,
-    "evidenceQuality": <0-20>,
-    "toneLanguage": <0-20>,
-    "opponentEngagement": <0-20>,
-    "argumentStructure": <0-20>
-  },
-  "overallPerformance": <0-100 (not necessarily average)>,
-  "critique": "<BRIEF 1-2 sentence critique>"
+    "messageNumber": ${messageNumber},
+    "messageContent": "${userMessage.replace(/"/g, '\\"')}",
+    "scores": {
+        "logicReasoning": <0-20>,
+        "evidenceQuality": <0-20>,
+        "toneLanguage": <0-20>,
+        "opponentEngagement": <0-20>,
+        "argumentStructure": <0-20>
+    },
+    "overallPerformance": <0-100 (not necessarily average)>,
+    "critique": "<BRIEF 1-2 sentence critique>"
 }
 
+**MANDATORY RELEVANCE & ACCURACY CHECK:**
+Before scoring, you MUST verify if the 'USER'S RESPONSE' actually addresses the 'Topic' and responds to the 'OPPONENT'S PREVIOUS ARGUMENT' (if any).
+1. If the response is irrelevant, garbage, nonsense, or completely unrelated to the debate topic:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overallPerformance.
+   - The 'critique' MUST explicitly state that the response is irrelevant.
+2. If the response is extremely shallow (e.g., "I don't know," "Maybe," or less than 5 words):
+   - AWARD a maximum overallPerformance of 10.
+
 SCORING GUIDELINES:
-- Most typical messages score 10-40.
+- Most typical messages score 10-35.
 - Only exceptional responses get 50+.
 - No evidence = Evidence Quality max 8.
-- 1-3 words = Max 8 total points.`;
+- 1-3 words = Max 5 total points.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -641,7 +630,7 @@ function analyzePerformancePatterns(
     if (scores.length > 0 && scores[0] < avgScore - 10) patterns.push("Weak opener, improves later");
     if (avgScore > 60) patterns.push("Strong overall mastery");
 
-    return patterns.length > 0 ? patterns.join("; ") : `Average performance (avg ${Math.round(avgScore)})`;
+    return patterns.length > 0 ? patterns.join("; ") : `Average performance(avg ${Math.round(avgScore)})`;
 }
 
 /**
@@ -667,44 +656,52 @@ export async function scoreIndividualGroupDiscussionMessageWithGroq(
     overallPerformance: number;
     critique: string;
 }> {
-    const systemPrompt = `You are a BRUTALLY HONEST group discussion coach and expert psychologist. Analyze a SINGLE contribution within its context.
+    const systemPrompt = `You are a BRUTALLY HONEST group discussion coach and expert psychologist.Analyze a SINGLE contribution within its context.
 
-**EVALUATION CRITERIA (0-20 each):**
-1. Participation & Engagement: Energy, relevance, and frequency of contribution.
+** EVALUATION CRITERIA(0 - 20 each):**
+    1. Participation & Engagement: Energy, relevance, and frequency of contribution.
 2. Communication Clarity: Precision of language, professional tone, and articulation.
 3. Leadership & Initiative: Taking charge, steering the discussion, or introducing new, valuable perspectives.
-4. Active Listening: DIRECTLY referencing or building upon the points made in the preceding context. Penalize generic responses that ignore previous speakers.
+4. Active Listening: DIRECTLY referencing or building upon the points made in the preceding context.Penalize generic responses that ignore previous speakers.
 5. Professional Collaboration: Encouraging others, finding common ground, or constructively challenging ideas.
 6. Critical Thinking: Depth of analysis, logical reasoning, and providing evidence or rationale.
 
-**STRICT SCORING PHILOSOPHY (0-100 total):**
+**MANDATORY RELEVANCE & CONTEXT CHECK:**
+Before scoring, you MUST verify if the 'CURRENT USER MESSAGE' actually addresses the 'TOPIC' and relates to the 'PRECEDING DISCUSSION CONTEXT'.
+1. If the contribution is irrelevant, garbage, nonsense, or completely unrelated to the topic:
+   - YOU MUST AWARD ZERO (0) for ALL category scores and the overallPerformance.
+   - The 'critique' MUST explicitly state that the contribution is irrelevant.
+2. If the contribution is extremely shallow (e.g., "Yes," "I agree," "Ok"):
+   - AWARD a maximum overallPerformance of 10.
+
+** STRICT SCORING PHILOSOPHY (0-100 total):**
 - 0-20: Meaningless filler (e.g., "I agree", "Cool idea").
 - 21-40: Basic participation, but derivative or superficial.
 - 41-60: Solid professional standard. Good, but not exceptional.
 - 61-80: Strong evidence of leadership, deep listening, or complex critical thinking (Elite).
 - 81-100: Master-level performance that shifts the entire group's direction or provides profound insight (Rare).
 
-**TOPIC:** ${topic}
+    ** TOPIC:** ${topic}
 
-**PRECEDING DISCUSSION CONTEXT:**
-${precedingContext || "No preceding context - this is the opening message."}
+** PRECEDING DISCUSSION CONTEXT:**
+    ${precedingContext || "No preceding context - this is the opening message."}
 
-**CURRENT USER MESSAGE (MESSAGE ${messageNumber}):** "${userMessage}"
+** CURRENT USER MESSAGE(MESSAGE ${messageNumber}):** "${userMessage}"
 
 Respond ONLY with valid JSON:
 {
-  "messageNumber": ${messageNumber},
-  "messageContent": "${userMessage.replace(/"/g, '\\"')}",
-  "scores": {
-    "participation": <0-20>,
-    "communication": <0-20>,
-    "leadership": <0-20>,
-    "listening": <0-20>,
-    "collaboration": <0-20>,
-    "criticalThinking": <0-20>
-  },
-  "overallPerformance": <0-100>,
-  "critique": "<1-2 sentences of biting, analytical, and brutally honest feedback>"
+    "messageNumber": ${messageNumber},
+    "messageContent": "${userMessage.replace(/"/g, '\\"')}",
+    "scores": {
+        "participation": <0-20>,
+        "communication": <0-20>,
+        "leadership": <0-20>,
+        "listening": <0-20>,
+        "collaboration": <0-20>,
+        "criticalThinking": <0-20>
+    },
+    "overallPerformance": <0-100>,
+    "critique": "<1-2 sentences of biting, analytical, and brutally honest feedback>"
 }`;
 
     const messages: GroqMessage[] = [
@@ -780,9 +777,9 @@ export async function getEnhancedDebateEvaluationWithGroq(
     const overallScore = Math.round(messageScores.reduce((sum, m) => sum + m.overallPerformance, 0) / messageScores.length || 0);
     const patterns = analyzePerformancePatterns(messageScores);
 
-    const systemPrompt = `You are a professional debate coach. Provide a comprehensive final evaluation based on the following per-message analysis.
+    const systemPrompt = `You are a professional debate coach.Provide a comprehensive final evaluation based on the following per - message analysis.
 
-Topic: ${debateTopic}
+    Topic: ${debateTopic}
 User Stance: ${userStance}
 AI Stance: ${aiStance}
 Overall Performance Estimate: ${overallScore}/100
@@ -793,65 +790,65 @@ ${messageScores.map(m => `Msg ${m.messageNumber}: ${m.overallPerformance}/100 - 
 
 Respond ONLY with valid JSON:
 {
-  "role": "Debater",
-  "overall_score": <independent holistic score 0-100 reflecting entire debate>,
-  "category_scores": {
-    "logicReasoning": <average performance 0-20>,
-    "evidenceQuality": <average performance 0-20>,
-    "toneLanguage": <average performance 0-20>,
-    "opponentEngagement": <average performance 0-20>,
-    "argumentStructure": <average performance 0-20>
-  },
-  "feedback": "<comprehensive analysis of the entire debate>",
-  "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-  "score": <same as overall_score>,
-  "whatYouDidWell": "<key strengths>",
-  "areasForImprovement": "<key weaknesses>",
-  "personalizedTip": "<number one priority>",
-  "spokenResponse": "<1-sentence summary>",
-  "messageBreakdown": ${JSON.stringify(messageScores)},
-  "communicationBehavior": {
-    "profile": "<3 words>",
-    "strength": "<1 sentence>",
-    "growthArea": "<1 sentence>"
-  },
-  "debateAnalysis": {
-    "strongestArgument": "<copy from history>",
-    "weakestArgument": "<copy from history>",
-    "bestRebuttal": "<copy from history>",
-    "missedOpportunities": "<analysis>",
-    "improvementOverTime": "<analysis>",
-    "logicalConsistency": "<analysis>",
-    "evidenceEffectiveness": "<analysis>",
-    "rhetoricalSophistication": "<analysis>",
-    "logicalFallacies": "<analysis>",
-    "argumentativePatterns": "<analysis>",
-    "emotionalIntelligence": "<analysis>",
-    "crossExaminationSkills": "<analysis>",
-    "argumentativeStamina": "<analysis>",
-    "timeManagement": "<analysis>",
-    "adaptability": "<analysis>",
-    "closingImpact": "<analysis>"
-  },
-  "worldClassComparison": {
-    "currentLevel": "<level>",
-    "championshipGap": "<what is missing>",
-    "nextMilestone": "<goal>",
-    "trainingFocus": "<focus area>"
-  },
-  "performanceInsights": {
-    "debateStyle": "<style description>",
-    "strengthAreas": ["s1", "s2", "s3"],
-    "improvementAreas": ["i1", "i2", "i3"],
-    "strategicMoves": "<analysis>",
-    "tacticalErrors": "<analysis>",
-    "opponentExploitation": "<analysis>",
-    "pressureHandling": "<analysis>",
-    "comebackAbility": "<analysis>"
-  }
+    "role": "Debater",
+    "overall_score": <independent holistic score 0-100 reflecting entire debate>,
+    "category_scores": {
+        "logicReasoning": <average performance 0-20>,
+        "evidenceQuality": <average performance 0-20>,
+        "toneLanguage": <average performance 0-20>,
+        "opponentEngagement": <average performance 0-20>,
+        "argumentStructure": <average performance 0-20>
+    },
+    "feedback": "<comprehensive analysis of the entire debate>",
+        "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
+            "score": <same as overall_score >,
+                "whatYouDidWell": "<key strengths>",
+                    "areasForImprovement": "<key weaknesses>",
+                        "personalizedTip": "<number one priority>",
+                            "spokenResponse": "<1-sentence summary>",
+                                "messageBreakdown": ${JSON.stringify(messageScores)},
+    "communicationBehavior": {
+        "profile": "<3 words>",
+            "strength": "<1 sentence>",
+                "growthArea": "<1 sentence>"
+    },
+    "debateAnalysis": {
+        "strongestArgument": "<copy from history>",
+            "weakestArgument": "<copy from history>",
+                "bestRebuttal": "<copy from history>",
+                    "missedOpportunities": "<analysis>",
+                        "improvementOverTime": "<analysis>",
+                            "logicalConsistency": "<analysis>",
+                                "evidenceEffectiveness": "<analysis>",
+                                    "rhetoricalSophistication": "<analysis>",
+                                        "logicalFallacies": "<analysis>",
+                                            "argumentativePatterns": "<analysis>",
+                                                "emotionalIntelligence": "<analysis>",
+                                                    "crossExaminationSkills": "<analysis>",
+                                                        "argumentativeStamina": "<analysis>",
+                                                            "timeManagement": "<analysis>",
+                                                                "adaptability": "<analysis>",
+                                                                    "closingImpact": "<analysis>"
+    },
+    "worldClassComparison": {
+        "currentLevel": "<level>",
+            "championshipGap": "<what is missing>",
+                "nextMilestone": "<goal>",
+                    "trainingFocus": "<focus area>"
+    },
+    "performanceInsights": {
+        "debateStyle": "<style description>",
+            "strengthAreas": ["s1", "s2", "s3"],
+                "improvementAreas": ["i1", "i2", "i3"],
+                    "strategicMoves": "<analysis>",
+                        "tacticalErrors": "<analysis>",
+                            "opponentExploitation": "<analysis>",
+                                "pressureHandling": "<analysis>",
+                                    "comebackAbility": "<analysis>"
+    }
 }
 
-CRITICAL: Start with { and end with }. No extra text.`;
+CRITICAL: Start with { and end with }.No extra text.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -906,7 +903,7 @@ export async function getGroupDiscussionResponseWithGroq(
 
 Discussion Topic: ${topic}
 
-Start the discussion with 1-2 sentences. Be direct, professional, and authentic.`;
+Start the discussion with 1 - 2 sentences.Be direct, professional, and authentic.`;
 
         const messages: GroqMessage[] = [
             { role: 'system', content: systemPrompt },
@@ -917,7 +914,7 @@ Start the discussion with 1-2 sentences. Be direct, professional, and authentic.
         return { content: content.trim(), agentName: startingAgent.name, agentPersonality: startingAgent.personality };
     } else {
         const respondingAgent = activeAgents[roundNumber % activeAgents.length];
-        const historyText = messageHistory ? messageHistory.slice(-6).map((msg) => `: ${msg.content}`).join('\n') : '';
+        const historyText = messageHistory ? messageHistory.slice(-6).map((msg) => `: ${msg.content} `).join('\n') : '';
 
         const systemPrompt = `You are ${respondingAgent.name}, a ${respondingAgent.personality}. ${respondingAgent.description}
 
@@ -927,7 +924,7 @@ ${userContribution ? `User's Latest: ${userContribution}` : 'Continue the discus
 Recent Context:
 ${historyText}
 
-Respond with 1-2 sentences. Be collaborative and constructive.`;
+Respond with 1 - 2 sentences.Be collaborative and constructive.`;
 
         const messages: GroqMessage[] = [
             { role: 'system', content: systemPrompt },
@@ -970,7 +967,7 @@ export async function getEnhancedGroupDiscussionEvaluationWithGroq(
         // Get up to 5 preceding messages for context
         const precedingMessages = history.slice(Math.max(0, userIdx - 5), userIdx);
         const precedingContext = precedingMessages
-            .map(m => `${m.type === "user" ? "User" : m.agentName || "Agent"}: ${m.content}`)
+            .map(m => `${m.type === "user" ? "User" : m.agentName || "Agent"}: ${m.content} `)
             .join("\n");
 
         const score = await scoreIndividualGroupDiscussionMessageWithGroq(apiKey, topic, userMsg.content, precedingContext, i + 1);
@@ -991,61 +988,62 @@ export async function getEnhancedGroupDiscussionEvaluationWithGroq(
     const overallScore = Math.round((categoryTotal / 120) * 100);
     const patterns = analyzePerformancePatterns(messageScores);
 
-    const systemPrompt = `You are an elite group discussion facilitator and behavioral analyst. Analyze the ENTIRE discussion and provide a BRUTALLY HONEST, granular synthesis of the user's performance.
+    const systemPrompt = `You are an elite group discussion facilitator and behavioral analyst.Analyze the ENTIRE discussion and provide a BRUTALLY HONEST, granular synthesis of the user's performance.
 
-**TOPIC:** ${topic}
-**CALCULATED OVERALL SCORE:** ${overallScore}/100
-**MESSAGE-BY-MESSAGE BREAKDOWN:**
-${messageScores.map(m => `[Message ${m.messageNumber}]
+    ** TOPIC:** ${topic}
+** CALCULATED OVERALL SCORE:** ${overallScore}/100
+    ** MESSAGE - BY - MESSAGE BREAKDOWN:**
+        ${messageScores.map(m => `[Message ${m.messageNumber}]
 Content: ${m.messageContent}
 Score: ${m.overallPerformance}/100
-Critique: ${m.critique}`).join("\n\n")}
+Critique: ${m.critique}`).join("\n\n")
+        }
 
-**STRICT EVALUATION MANDATE:**
-- **Participation**: Is the user active or just a passenger? One-liners are a failure.
-- **Listening**: Does the user build on specific points from others? Or are they just waiting for their turn to speak?
-- **Leadership**: Did they steer the group? Did they resolve conflicts or summarize progress?
-- **Insight**: Is their contribution adding value or just stating the obvious?
+** STRICT EVALUATION MANDATE:**
+- ** Participation **: Is the user active or just a passenger ? One - liners are a failure.
+- ** Listening **: Does the user build on specific points from others ? Or are they just waiting for their turn to speak ?
+- ** Leadership **: Did they steer the group ? Did they resolve conflicts or summarize progress ?
+- ** Insight **: Is their contribution adding value or just stating the obvious ?
 
-Respond ONLY with valid JSON:
-{
-  "role": "Group Discussion",
-  "overall_score": <independent holistic score 0-100>,
-  "category_scores": {
-    "participation": <0-20>,
-    "communication": <0-20>,
-    "leadership": <0-20>,
-    "listening": <0-20>,
-    "collaboration": <0-20>,
-    "criticalThinking": <0-20>
-  },
-  "feedback": "<comprehensive analysis>",
-  "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
-  "score": <same as overall_score>,
-  "whatYouDidWell": "<strengths>",
-  "areasForImprovement": "<weaknesses>",
-  "personalizedTip": "<priority tip>",
-  "spokenResponse": "<1-sentence summary>",
-  "communicationBehavior": {
-    "profile": "<3 words>",
-    "strength": "<1 sentence>",
-    "growthArea": "<1 sentence>"
-  },
-  "exampleRewrite": {
-    "original": "<pick poor message>",
-    "improved": "<make it elite>",
-    "reasoning": "<why>"
-  },
-  "groupDiscussionAnalysis": {
-    "strongestContribution": "<copy from history>",
-    "weakestContribution": "<copy from history>",
-    "bestInteraction": "<analysis>",
-    "missedOpportunities": "<analysis>",
-    "groupDynamics": "<analysis>"
-  }
-}
+    Respond ONLY with valid JSON:
+    {
+        "role": "Group Discussion",
+        "overall_score": <independent holistic score 0-100>,
+        "category_scores": {
+            "participation": <0-20>,
+            "communication": <0-20>,
+            "leadership": <0-20>,
+            "listening": <0-20>,
+            "collaboration": <0-20>,
+            "criticalThinking": <0-20>
+        },
+        "feedback": "<comprehensive analysis>",
+            "tips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
+                "score": <same as overall_score >,
+                    "whatYouDidWell": "<strengths>",
+                        "areasForImprovement": "<weaknesses>",
+                            "personalizedTip": "<priority tip>",
+                                "spokenResponse": "<1-sentence summary>",
+                                    "communicationBehavior": {
+            "profile": "<3 words>",
+                "strength": "<1 sentence>",
+                    "growthArea": "<1 sentence>"
+        },
+        "exampleRewrite": {
+            "original": "<pick poor message>",
+                "improved": "<make it elite>",
+                    "reasoning": "<why>"
+        },
+        "groupDiscussionAnalysis": {
+            "strongestContribution": "<copy from history>",
+                "weakestContribution": "<copy from history>",
+                    "bestInteraction": "<analysis>",
+                        "missedOpportunities": "<analysis>",
+                            "groupDynamics": "<analysis>"
+        }
+    }
 
-CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
+CRITICAL: Score each category out of 20 independently.Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1077,61 +1075,69 @@ export async function getEnhancedTeacherEvaluationWithGroq(
 ): Promise<any> {
     console.log("🎯 getEnhancedTeacherEvaluationWithGroq called");
 
-    const systemPrompt = `You are a BRUTALLY HONEST teaching coach analyzing teaching performance. Provide realistic scoring that reflects actual teaching quality.
+    const systemPrompt = `You are a BRUTALLY HONEST teaching coach and educational auditor.Your mission is to provide RIGOROUS, ACCURATE, and MEANINGFUL evaluation of teaching performance.
 
-Your evaluation MUST judge whether the explanation sounds like an actual teacher:
-- Penalize summaries that sound like general chat or casual opinions
-- Reward teacher-like delivery: objectives, scaffolding, examples, checks for understanding, and clear explanations
-- Flag and penalize inaccuracies, missing steps, and superficial treatment
-- Be EXTREMELY BRIEF in your written responses.
+** MANDATORY RELEVANCE CHECK:**
+    Before scoring, you MUST verify if the 'User Teaching' is actually an attempt to teach the provided 'Topic'.
+1. If the input is irrelevant, garbage, nonsense, or completely unrelated to the topic:
+- YOU MUST AWARD ZERO(0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the content is irrelevant / invalid.
+2. If the input is a brief greeting or a single sentence that doesn't attempt to teach:
+    - AWARD a maximum overall_score of 5.
 
-**TEACHING CONTEXT:**
-Topic: ${teachingTopic}
+        ** EVALUATION CRITERIA:**
+            - Judge whether the explanation sounds like an actual teacher: objectives, scaffolding, examples, and checks for understanding.
+- Reward: Clear structure, simplified complex concepts, and engaging delivery.
+- Penalize: Casual chat, superficial opinions, factual inaccuracies, or missing steps.
+- Be EXTREMELY BRIEF in your written responses(MAX 2 sentences for feedback).
+
+** TEACHING CONTEXT:**
+    Topic: ${teachingTopic}
 User Teaching: ${userTeaching}
 
-**STRICT SCORING PHILOSOPHY:**
-- Category scores (0-20 each): Clarity, Structure, Engagement, Educational Value, Accessibility, Completeness.
-- Overall score (0-100) evaluates COMPLETE TEACHING EFFECTIVENESS.
-- Be accurate and honest - most teachers score 30-60 overall.
-- Only truly exceptional teaching gets 70+ overall.
+** STRICT SCORING PHILOSOPHY:**
+    - Category scores(0 - 20 each): Clarity, Structure, Engagement, Educational Value, Accessibility, Completeness.
+- Overall score(0 - 100) evaluates COMPLETE TEACHING EFFECTIVENESS.
+- Be accurate and honest - most teachers score 30 - 60 overall.
+- Only truly exceptional teaching gets 70 + overall.
 
 Respond ONLY with valid JSON:
 {
-  "role": "Teacher",
-  "overall_score": <independent holistic score 0-100>,
-  "category_scores": {
-    "clarity": <0-20>,
-    "structure": <0-20>,
-    "engagement": <0-20>,
-    "educationalValue": <0-20>,
-    "accessibility": <0-20>,
-    "completeness": <0-20>
+    "role": "Teacher",
+        "overall_score": <independent holistic score 0 - 100 >,
+            "category_scores": {
+        "clarity": <0-20 >,
+            "structure": <0-20 >,
+                "engagement": <0-20 >,
+                    "educationalValue": <0-20 >,
+                        "accessibility": <0-20 >,
+                            "completeness": <0-20 >
   },
-  "feedback": "<MAX 2 sentences>",
-  "tips": ["SHORT tip 1", "SHORT tip 2", "SHORT tip 3"],
-  "score": <same as overall_score>,
-  "whatYouDidWell": "<MAX 1 sentence>",
-  "areasForImprovement": "<MAX 1 sentence>",
-  "teachingAnalysis": {
-    "strongestMoment": "<MAX 1 sentence>",
-    "weakestMoment": "<MAX 1 sentence>",
-    "bestExplanation": "<MAX 1 sentence>",
-    "missedOpportunities": "<MAX 1 sentence>",
-    "audienceAdaptation": "<MAX 1 sentence>"
-  },
-  "communicationBehavior": {
-    "profile": "<3 words>",
-    "strength": "<1 sentence>",
-    "growthArea": "<1 sentence>"
-  },
-  "exampleRewrite": {
-    "original": "<MAX 2 sentences>",
-    "improved": "<MAX 2 sentences>",
-    "reasoning": "<MAX 1 sentence>"
-  }
+    "feedback": "<MAX 2 sentences>",
+        "tips": ["SHORT tip 1", "SHORT tip 2", "SHORT tip 3"],
+            "score": <same as overall_score >,
+                "whatYouDidWell": "<MAX 1 sentence>",
+                    "areasForImprovement": "<MAX 1 sentence>",
+                        "teachingAnalysis": {
+        "strongestMoment": "<MAX 1 sentence>",
+            "weakestMoment": "<MAX 1 sentence>",
+                "bestExplanation": "<MAX 1 sentence>",
+                    "missedOpportunities": "<MAX 1 sentence>",
+                        "audienceAdaptation": "<MAX 1 sentence>"
+    },
+    "communicationBehavior": {
+        "profile": "<3 words>",
+            "strength": "<1 sentence>",
+                "growthArea": "<1 sentence>"
+    },
+    "exampleRewrite": {
+        "original": "<MAX 2 sentences>",
+            "improved": "<MAX 2 sentences>",
+                "reasoning": "<MAX 1 sentence>"
+    }
 }
 
-CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
+CRITICAL: Score each category out of 20 independently.Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1173,73 +1179,76 @@ export async function getEnhancedStorytellerEvaluationWithGroq(
 ): Promise<any> {
     console.log("🎯 getEnhancedStorytellerEvaluationWithGroq called");
 
-    const systemPrompt = `You are a professional literary evaluator, not a cheerleader. Your task is to critically evaluate a narrative using a strict, calibrated 0–20 scoring system.
+    const systemPrompt = `You are a professional literary auditor and narrative critic.Your task is to critically evaluate a narrative using a strict, calibrated 0–20 scoring system.You have ZERO tolerance for fluff, irrelevance, or low - effort content.
 
-**STORYTELLING CONTEXT:**
-Prompt: ${storyPrompt}
-User Story: ${userStory}
+** MANDATORY RELEVANCE & QUALITY CHECK:**
+    Before scoring, you MUST verify if the 'User Story' is a meaningful narrative response to the 'Prompt'.
+1. If the input is irrelevant, garbage, nonsense, or completely unrelated to the story prompt:
+- YOU MUST AWARD ZERO(0) for ALL category scores and the overall_score.
+   - The 'feedback' MUST explicitly state that the content is irrelevant / invalid.
+2. If the input is a single sentence or extremely low - effort:
+- AWARD a maximum overall_score of 5.
 
-**IMPORTANT SCORING RULES:**
-1. SCORING ANCHORS:
-   - 0–5: Fundamentally broken, incoherent, or severely flawed
-   - 6–10: Weak execution, shallow depth, basic competence only
-   - 11–14: Solid, readable, but safe or limited
-   - 15–17: Strong, well-crafted, noticeable skill
-   - 18–20: Rare, exceptional, emotionally or structurally outstanding
-2. Scores of 18–20 are EXTREMELY RARE. Reserve them only for exceptional, near-publishable, or award-level writing. 
-3. Judge execution depth, not surface polish. Distinguish between “good writing” and “exceptional writing.”
-4. Creativity & Originality must be judged independently. Familiar tropes or derivative plots MUST reduce this score, even if execution is strong. Subversion or fresh perspectives are required for high scores.
-5. Emotional Impact is NOT tone or mood. Judge based on emotional escalation, psychological depth, and lasting resonance/catharsis.
-6. Show vs. Tell requires demonstrable showing. Explicit thematic statements or direct explanations of emotions reduce this score.
-7. Narrative Structure must consider scale. Short-form narratives must be exceptionally efficient, layered, and deliberate to get high scores.
-8. Deduct points for missing depth, rushed resolution, underdeveloped arcs, or safe choices. Avoid score clustering.
-
-**STORY COMPLETENESS:** Penalize heavily if the story is unfinished or feels like a summary rather than a full narration.
+    ** STRICT SCORING RULES:**
+        1. SCORING ANCHORS:
+- 0–5: Fundamentally broken, incoherent, irrelevant, or severely flawed
+    - 6–10: Weak execution, shallow depth, basic competence only
+        - 11–14: Solid, readable, but safe or limited
+            - 15–17: Strong, well - crafted, noticeable skill
+                - 18–20: Rare, exceptional, emotionally or structurally outstanding
+2. Scores of 18–20 are EXTREMELY RARE.Reserve them only for award - level writing. 
+3. Creativity & Originality: Familiar tropes or derivative plots MUST reduce this score significantly.
+4. Emotional Impact: Judge based on emotional escalation and resonance, not just tone.
+5. STORY COMPLETENESS: Penalize heavily(max 40 overall) if the story is unfinished or feels like a brief summary.
 
 Respond ONLY with valid JSON:
 {
-  "role": "Storyteller",
-  "overall_score": <independent holistic score 0-100>,
-  "summary_rating": <"Poor" | "Developing" | "Competent" | "Strong" | "Exceptional">,
-  "category_scores": {
-    "narrativeStructure": <0-20>,
-    "characterDevelopment": <0-20>,
-    "showVsTell": <0-20>,
-    "emotionalImpact": <0-20>,
-    "conflictAndStakes": <0-20>,
-    "creativity": <0-20>
+    "role": "Storyteller",
+        "overall_score": <independent holistic score 0 - 100 >,
+            "summary_rating": <"Poor" | "Developing" | "Competent" | "Strong" | "Exceptional">,
+                "category_scores": {
+        "narrativeStructure": <0-20 >,
+            "characterDevelopment": <0-20 >,
+                "showVsTell": <0-20 >,
+                    "emotionalImpact": <0-20 >,
+                        "conflictAndStakes": <0-20 >,
+                            "creativity": <0-20 >
   },
-  "category_justifications": {
-    "narrativeStructure": "<1-2 sentences justifying this specific score>",
-    "characterDevelopment": "<1-2 sentences justifying this specific score>",
-    "showVsTell": "<1-2 sentences justifying this specific score>",
-    "emotionalImpact": "<1-2 sentences justifying this specific score>",
-    "conflictAndStakes": "<1-2 sentences justifying this specific score>",
-    "creativity": "<1-2 sentences justifying this specific score>"
-  },
-  "feedback": "<MAX 2 sentences of high-level assessment>",
-  "tips": ["SHORT tip 1", "SHORT tip 2", "SHORT tip 3"],
-  "score": <same as overall_score>,
-  "whatYouDidWell": "<MAX 1 sentence>",
-  "areasForImprovement": "<MAX 1 sentence>",
-  "storytellingAnalysis": {
-    "strongestMoment": "<MAX 1 sentence>",
-    "weakestMoment": "<MAX 1 sentence>",
-    "sensoryDetails": "<1 sentence analysis>",
-    "conflictAnalysis": "<1 sentence analysis>",
-    "themeAndSubtext": "<1 sentence identification>"
-  },
-  "communicationBehavior": {
-    "profile": "<3 words>",
-    "strength": "<1 sentence>",
-    "growthArea": "<1 sentence>"
-  },
-  "exampleRewrite": {
-    "original": "<pick a 'telling' sentence>",
-    "improved": "<rewrite it to 'show'>",
-    "reasoning": "<why>"
-  }
+    "category_justifications": {
+        "narrativeStructure": "<1-2 sentences justifying this specific score>",
+            "characterDevelopment": "<1-2 sentences justifying this specific score>",
+                "showVsTell": "<1-2 sentences justifying this specific score>",
+                    "emotionalImpact": "<1-2 sentences justifying this specific score>",
+                        "conflictAndStakes": "<1-2 sentences justifying this specific score>",
+                            "creativity": "<1-2 sentences justifying this specific score>"
+    },
+    "feedback": "<MAX 2 sentences of high-level assessment>",
+        "tips": ["SHORT tip 1", "SHORT tip 2", "SHORT tip 3"],
+            "score": <same as overall_score >,
+                "whatYouDidWell": "<MAX 1 sentence>",
+                    "areasForImprovement": "<MAX 1 sentence>",
+                        "storytellingAnalysis": {
+        "strongestMoment": "<MAX 1 sentence>",
+            "weakestMoment": "<MAX 1 sentence>",
+                "sensoryDetails": "<1 sentence analysis>",
+                    "conflictAnalysis": "<1 sentence analysis>",
+                        "themeAndSubtext": "<1 sentence identification>"
+    },
+    "communicationBehavior": {
+        "profile": "<3 words>",
+            "strength": "<1 sentence>",
+                "growthArea": "<1 sentence>"
+    },
+    "exampleRewrite": {
+        "original": "<pick a 'telling' sentence>",
+            "improved": "<rewrite it to 'show'>",
+                "reasoning": "<why>"
+    }
 }
+
+** STORY CONTEXT:**
+Prompt: ${storyPrompt}
+User Story: ${userStory}
 
 CRITICAL: Score each category out of 20 independently. Provide a separate, independent overall_score out of 100. Do NOT derive overall_score from category scores.`;
 
@@ -1294,9 +1303,9 @@ export async function getCrisisRoomResponseWithGroq(
 ): Promise<{ content: string; agentName: string; emotionalState: string }> {
     const systemPrompt = `You are an AI in the 'Crisis Room' RPG. 
 The scenario is: ${scenario}. 
-Time left: ${Math.floor(timeLeft / 60)}m ${timeLeft % 60}s.
+Time left: ${Math.floor(timeLeft / 60)}m ${timeLeft % 60} s.
 
-You must act as one of the panicking agents (Sarah, Marcus, Elena, or David). 
+You must act as one of the panicking agents(Sarah, Marcus, Elena, or David). 
 Your goal is to be EMOTIONAL, URGENT, and REACTIONARY.
 You should NOT be helpful unless the user calms you down or gives a very clear, authoritative command.
 
@@ -1305,10 +1314,10 @@ If the user is authoritative, become more obedient but still stressed.
 
 Return JSON in this format:
 {
-  "content": "<your panicky message>",
-  "agentName": "<Sarah|Marcus|Elena|David>",
-  "emotionalState": "<Panicked|Stressed|Calm|Hopeful|Angry>"
-}`;
+    "content": "<your panicky message>",
+        "agentName": "<Sarah|Marcus|Elena|David>",
+            "emotionalState": "<Panicked|Stressed|Calm|Hopeful|Angry>"
+} `;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1342,18 +1351,18 @@ export async function getMirrorPersonaAnalysisWithGroq(
 }> {
     const systemPrompt = `Analyze the following speech from a user to create a "Mirror Persona".
 Identify their patterns:
-- Do they use filler words (um, ah, like)?
-- Are they over-confident or hesitant?
-- Do they use complex vocabulary or simple?
-- Is their tone aggressive, passive, or neutral?
+- Do they use filler words(um, ah, like) ?
+    - Are they over - confident or hesitant ?
+        - Do they use complex vocabulary or simple ?
+            - Is their tone aggressive, passive, or neutral ?
 
-Return JSON in this format:
+                Return JSON in this format:
 {
-  "personalityTraits": ["Trait 1", "Trait 2"],
-  "communicationFlaws": ["Flaw 1", "Flaw 2"],
-  "mimicryPrompt": "A detailed 1-paragraph prompt that another AI can use to IMITATE this user perfectly. Include their specific verbal tics and tone.",
-  "styleSummary": "A concise summary of their communication style."
-}`;
+    "personalityTraits": ["Trait 1", "Trait 2"],
+        "communicationFlaws": ["Flaw 1", "Flaw 2"],
+            "mimicryPrompt": "A detailed 1-paragraph prompt that another AI can use to IMITATE this user perfectly. Include their specific verbal tics and tone.",
+                "styleSummary": "A concise summary of their communication style."
+} `;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
@@ -1375,8 +1384,8 @@ export async function getMirrorPersonaResponseWithGroq(
     const systemPrompt = `You are the USER'S MIRROR. 
 ${mimicryPrompt}
 
-You must talk EXACTLY like the user did. If they were stuttering, you stutter. If they were arrogant, you are arrogant.
-Act as their double. They are trying to "coach" you, but you should react how they would react to criticism.`;
+You must talk EXACTLY like the user did.If they were stuttering, you stutter.If they were arrogant, you are arrogant.
+Act as their double.They are trying to "coach" you, but you should react how they would react to criticism.`;
 
     const messages: GroqMessage[] = [
         { role: "system", content: systemPrompt },
